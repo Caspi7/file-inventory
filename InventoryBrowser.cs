@@ -316,6 +316,12 @@ sealed partial class InventoryWindow
 
     void UpdateScanDisplay()
     {
+        if (checkingUpdates)
+        {
+            ShowUpdateProgress();
+            return;
+        }
+        scanBar.AccessibleName = "Scan progress";
         var selected = SelectedVolumes();
         var volume = selected.FirstOrDefault(v => running.ContainsKey(v.Id));
         if (volume is not null && progress.TryGetValue(volume.Id, out var sample))

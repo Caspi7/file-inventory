@@ -68,7 +68,7 @@ static class AppUpdates
         return best;
     }
 
-    public static async Task<string> Download(Release release, CancellationToken token)
+    public static async Task<string> Download(Release release, CancellationToken token, IProgress<long>? progress = null)
     {
         string path = Path.Combine(Path.GetTempPath(), $"FileInventory-update-{Guid.NewGuid():N}.exe");
         try
@@ -79,12 +79,18 @@ static class AppUpdates
             using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[81920];
             long total = 0;
+            long sampleAt = Stopwatch.GetTimestamp();
             while (await content.ReadAsync(buffer, token) is int count && count != 0)
             {
                 total += count;
                 if (total > release.Bytes) throw new InvalidDataException("The installer size did not match the release.");
                 sha.AppendData(buffer, 0, count);
                 await output.WriteAsync(buffer.AsMemory(0, count), token);
+                if (total == release.Bytes || Stopwatch.GetElapsedTime(sampleAt).TotalMilliseconds >= 150)
+                {
+                    progress?.Report(total);
+                    sampleAt = Stopwatch.GetTimestamp();
+                }
             }
             if (total != release.Bytes || !Convert.ToHexString(sha.GetHashAndReset()).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The installer did not match the GitHub release checksum.");

@@ -4,6 +4,8 @@ sealed partial class InventoryWindow
 {
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     bool checkingUpdates;
+    AppUpdates.Release? updateRelease;
+    long updateBytes;
     CancellationTokenSource? updateCancellation;
     public string? UpdateInstaller { get; private set; }
 
@@ -32,6 +34,7 @@ sealed partial class InventoryWindow
         }
         checkingUpdates = true;
         updateButton.Text = "Cancel update check";
+        UpdateScanDisplay();
         string? download = null;
         try
         {
@@ -44,9 +47,14 @@ sealed partial class InventoryWindow
                 return;
             }
 
-            state.Text = $"Downloading update {release.Version}…";
+            updateRelease = release;
             updateButton.Text = "Cancel download";
-            download = await AppUpdates.Download(release, timeout.Token);
+            UpdateScanDisplay();
+            var downloadProgress = new Progress<long>(bytes =>
+            {
+                if (updateCancellation == timeout) updateBytes = bytes;
+            });
+            download = await AppUpdates.Download(release, timeout.Token, downloadProgress);
             if (closing) return;
             UpdateInstaller = download;
         }
@@ -63,12 +71,34 @@ sealed partial class InventoryWindow
             updateCancellation = null;
             if (download is not null && UpdateInstaller is null) File.Delete(download);
             checkingUpdates = false;
+            updateRelease = null;
+            updateBytes = 0;
             if (!closing)
             {
                 updateButton.Enabled = true;
                 updateButton.Text = "Check for updates";
+                UpdateScanDisplay();
             }
         }
         if (UpdateInstaller is not null) Close();
+    }
+
+    void ShowUpdateProgress()
+    {
+        scanBar.AccessibleName = "Update download progress";
+        scanBar.Visible = true;
+        if (updateRelease is not { } release)
+        {
+            if (scanBar.Style != ProgressBarStyle.Marquee) scanBar.Style = ProgressBarStyle.Marquee;
+            scanState.Text = "Checking for updates…";
+            return;
+        }
+
+        if (scanBar.Style != ProgressBarStyle.Continuous) scanBar.Style = ProgressBarStyle.Continuous;
+        int percent = (int)(100 * updateBytes / release.Bytes);
+        scanBar.Value = percent;
+        scanState.Text = updateBytes == release.Bytes
+            ? $"Verifying update {release.Version}…"
+            : $"Downloading update {release.Version} · {percent}% · {updateBytes / 1_000_000.0:N1} of {release.Bytes / 1_000_000.0:N1} MB";
     }
 }
