@@ -6,7 +6,7 @@ Record the Windows build, .NET SDK, SSD, CPU, memory, runtime SQLite version and
 
 1. Start with an empty benchmark subdirectory. Generate the synthetic catalog with `python verify_search.py --output "$env:LOCALAPPDATA\FileInventory\Benchmark\catalog.sqlite3"`.
 2. Launch `dotnet run -c Release -- --benchmark`. This mode uses the benchmark subdirectory and disables real volume discovery, scanning and Explorer actions.
-3. Exercise exact names, prefixes, broad substrings, broad multi-term searches, accented names, punctuation and mixed terms such as `kl re`. Test the volume, status, extension, size and modified date filters together. Check that the literal matches lead the alias matches for `klm hangar reflectie` and that the selected alias appears in the Matched column.
+3. Exercise exact names, prefixes, broad substrings, broad multi-term searches, accented names, punctuation and mixed terms such as `kl re`. Test the volume, status, extension, size and modified date filters together. Check that a folder-name search returns the folder itself and excludes children whose own names do not match.
 4. Collect at least 30 repetitions per query. Use the displayed final-input-to-grid-update milliseconds and record p95 for each query. Include cold launch and first query separately. The provisional warm target is p95 ≤ 200 ms. Compare a second run against an app catalog while a large real refresh is staging and again while it publishes. Record any UI pauses, chosen scan volume duration and catalog size.
 
 ## Volume discovery and read-only scanning

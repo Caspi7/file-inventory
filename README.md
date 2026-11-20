@@ -22,13 +22,13 @@ Use `win-arm64` on Windows ARM. Start `FileInventory.exe` from the publish direc
 ## Use
 
 - Select one or more volumes with Ctrl or Shift and click **Refresh selected**. Select a single volume to view its scan details or edit its schedule. Enable **Schedule refresh** and save it to include the volume in background refreshes. The interval starts at 24 hours and is measured from the last attempt. Minimize the window to keep it running in the notification area.
-- Type any part of a filename or folder name. Put spaces between terms to find entries containing all terms across the filename and its ancestor folders. One- and two-character terms match indexed prefixes. Search is case-insensitive and preserves accent distinctions. Edit `aliases.json` under the data directory and restart to change the folder aliases.
+- Type any part of a filename or folder name. Put spaces between terms to find entries whose own name matches every term. One- and two-character terms match word prefixes. Search is case-insensitive and preserves accent distinctions.
 - Use the volume, extension, size, modification date or connection filters as needed. Select a row to copy its path or reveal an eligible online entry in Explorer. **Find possible copies** uses size, creation time and modification time across volumes. Treat these results as unverified.
 - The volume panel shows scan progress, omissions, the last attempt and the last refresh that published a snapshot. A scan with omissions can publish verified observations. Entries in unverified areas remain stale. Offline results show the last known mount path.
 
 ## Catalog behavior
 
-The data directory is `%LOCALAPPDATA%\FileInventory`. It contains the SQLite catalog, temporary staging databases, the app instance lock and alias settings. The scanner excludes this directory, enumerates hidden entries, and records reparse and recall-risk entries without walking their subtrees. NTFS identity lookups use metadata-only handles with no-recall flags for ordinary files. The scanner records identity lookup cost and preserves separate hard-link paths. An ID match is recorded as a same-volume move candidate when both snapshots have a single path for the ID, creation times match and the old path can be verified absent.
+The data directory is `%LOCALAPPDATA%\FileInventory`. It contains the SQLite catalog, temporary staging databases, the app instance lock and crash reports. The scanner excludes this directory, enumerates hidden entries, and records reparse and recall-risk entries without walking their subtrees. NTFS identity lookups use metadata-only handles with no-recall flags for ordinary files. The scanner records identity lookup cost and preserves separate hard-link paths. An ID match is recorded as a same-volume move candidate when both snapshots have a single path for the ID, creation times match and the old path can be verified absent.
 
 Local mounted volumes use the Windows volume GUID where available. The fallback identity includes filesystem serial, filesystem type and mount point. Fallback identities can lose continuity when a drive letter changes. Mapped network shares are outside the current scanner scope. Connected and offline volumes share the same catalog.
 
@@ -53,9 +53,11 @@ The provided source was validated at the SQL layer on Linux. This environment la
 
 Choose a drive at the top and click **Scan selected drive**. Scans record accessible files and folders, including empty folders. Protected folders and skipped reparse/recall-risk areas are reported as omissions.
 
-Expand the saved **Folders and files** tree to browse. With the search box empty, the right list shows the selected folder's immediate contents. Type a filename or ancestor-folder term to search the selected drive; choose **All volumes** to search across catalogs. Every match is available in the scrollable list, with a total count. Results and tree branches load in pages rather than stopping at 50 entries.
+Expand the saved **Folders and files** tree to browse. With the search box empty, the right list shows the selected folder's immediate contents. Type a file or folder name to search across the drives selected in the search scope. Every match is available in the scrollable list, with a total count. Results and tree branches load in pages rather than stopping at 50 entries.
 
 Click a search result (or press Enter on it) to expand its ancestors and highlight the exact file in the tree. Search results stay visible. Double-click a folder in the list, or select a tree folder and click **Browse selected folder**, to leave search and browse its contents. Indexed offline drives retain their tree and search results; Explorer reveal stays disabled while offline.
+
+File Inventory saves a Windows minidump and an exception report for unhandled application exceptions in `%LOCALAPPDATA%\FileInventory\CrashDumps`. Reports stay on the device and may include file paths or other process data.
 
 Existing catalogs are preserved. Ancestor folders are reconstructed from previously indexed files on first launch. Scan a drive again to capture its empty folders, which older builds did not store.
 

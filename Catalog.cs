@@ -22,10 +22,7 @@ sealed partial class Catalog
 {
     public string DataDirectory { get; }
     readonly string database;
-    readonly Dictionary<string, string[]> aliases;
     static readonly string search = Resource("Search.sql");
-    static readonly string prefixSearch = Resource("PrefixSearch.sql");
-    static readonly string longSearch = Resource("LongTerms.sql");
     static readonly Regex words = new(@"[\p{L}\p{M}\p{N}]+", RegexOptions.Compiled);
 
     public Catalog(string dataDirectory)
@@ -39,13 +36,6 @@ sealed partial class Catalog
             if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
                 Execute(db, "ALTER TABLE files ADD COLUMN removed INTEGER;");
         BackfillFolders(db);
-        var config = Path.Combine(dataDirectory, "aliases.json");
-        if (!File.Exists(config))
-            File.WriteAllText(config, "{\n  \"hangar\": [\"hangaar\"],\n  \"hangaar\": [\"hangar\"]\n}\n");
-        var configured = JsonSerializer.Deserialize<Dictionary<string, string[]>>(File.ReadAllText(config))
-            ?? new();
-        aliases = configured.ToDictionary(pair => Key(pair.Key), pair => pair.Value
-            .Select(Key).Where(word => word.EnumerateRunes().Count() >= 3).Distinct().ToArray());
     }
 
     public static string Resource(string name)
@@ -135,7 +125,6 @@ sealed partial class Catalog
             ("on", enabled), ("hours", hours), ("id", id));
     }
 
-    string[] Alternatives(string term) => aliases.TryGetValue(term, out var values) ? values : [];
     static string Quote(string term) => "\"" + term.Replace("\"", "\"\"") + "\"";
 
     public List<Hit> Find(string input, Filters filters) => QueryPage(input, filters, 0, 50).Rows;
@@ -184,19 +173,19 @@ sealed partial class Catalog
         var terms = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Distinct().ToArray();
         var shortTerms = terms.Where(t => t.EnumerateRunes().Count() < 3).ToArray();
         var longTerms = terms.Except(shortTerms).ToArray();
-        string? match = longTerms.Length == 0 ? null : string.Join(" AND ", longTerms.Select(term =>
-        {
-            var variants = Alternatives(term);
-            return variants.Length == 0 ? Quote(term) :
-                "(" + Quote(term) + " OR parent_key : (" + string.Join(" OR ", variants.Select(Quote)) + "))";
-        }));
+        string? match = longTerms.Length == 0 ? null
+            : "name_key : (" + string.Join(" AND ", longTerms.Select(Quote)) + ")";
         using var db = Open();
+        // Existing catalogs also index ancestor prefixes. Verify short candidates against the name.
+        db.CreateFunction<string, bool>("matches_name_prefixes", name =>
+        {
+            var prefixes = Prefixes(name, "").ToHashSet(StringComparer.Ordinal);
+            return shortTerms.All(prefixes.Contains);
+        }, isDeterministic: true);
         using var interrupt = cancellationToken.Register(() => SQLitePCL.raw.sqlite3_interrupt(db.Handle));
         Execute(db, "BEGIN;");
-        var args = new (string, object?)[] { ("query", query), ("end", query + char.ConvertFromUtf32(0x10ffff)),
-            ("long", query.EnumerateRunes().Count() >= 3), ("match", match),
-            ("firstShort", shortTerms.FirstOrDefault()), ("short", JsonSerializer.Serialize(shortTerms)),
-            ("terms", JsonSerializer.Serialize(terms)), ("volume", filters.Volume),
+        var args = new (string, object?)[] { ("query", query), ("match", match),
+            ("firstShort", shortTerms.FirstOrDefault()), ("volume", filters.Volume),
             ("extension", filters.Extension is null ? null : Key(filters.Extension.TrimStart('.'))),
             ("min", filters.Min), ("max", filters.Max), ("modifiedFrom", filters.From),
             ("modifiedThrough", filters.Through), ("online", filters.Online) };
@@ -224,18 +213,6 @@ sealed partial class Catalog
               AND ($parent IS NULL OR parent_key=$parent)
             ORDER BY (attributes & 16) DESC,name_key,volume,rel LIMIT 50;
             """;
-        if (query.Length > 0)
-        {
-            // FTS already includes name and ancestor matches; avoid UNIONing duplicate
-            // exact/prefix candidates and sorting a second million-row candidate set.
-            int ranked = sql.IndexOf(", ranked AS", StringComparison.Ordinal);
-            string candidates = longTerms.Length > 0
-                ? "WITH candidates AS (SELECT rowid AS id FROM fragments WHERE fragments MATCH $match)"
-                : "WITH candidates AS (SELECT file_id AS id FROM prefixes WHERE token=$firstShort)";
-            sql = candidates + sql[ranked..];
-            sql = sql.Replace("FROM candidates c JOIN files f", "FROM candidates c CROSS JOIN files f",
-                StringComparison.Ordinal);
-        }
         sql = sql.Replace("WHERE ($volume IS NULL OR f.volume=$volume)",
             "WHERE ($volume IS NULL OR f.volume=$volume)" +
             (filters.Drives is null ? "" : " AND f.volume IN (SELECT value FROM json_each($drives))") +
@@ -296,26 +273,11 @@ sealed partial class Catalog
                 var stale = reader.GetBoolean(6);
                 var attributes = (FileAttributes)reader.GetInt32(10);
                 bool removed = !reader.IsDBNull(13);
-                var directory = Path.GetDirectoryName(rel) ?? "";
-                var evidence = new List<string>();
-                foreach (var term in terms)
-                {
-                    bool Matches(string value) => term.EnumerateRunes().Count() < 3
-                        ? Prefixes(Key(value), "").Contains(term)
-                        : Key(value).Contains(term, StringComparison.Ordinal);
-                    if (Matches(name)) evidence.Add($"{term} → {name}");
-                    foreach (var segment in directory.Split('\\', StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        if (Matches(segment)) evidence.Add($"{term} → {segment}");
-                        else foreach (var alias in Alternatives(term))
-                            if (Key(segment).Contains(alias, StringComparison.Ordinal))
-                                evidence.Add($"{term} → {segment} (alias {alias})");
-                    }
-                }
+                var evidence = terms.Select(term => $"{term} → {name}");
                 rows.Add(new(name, Path.Combine(reader.GetString(2), rel), rel, reader.GetString(3), reader.GetString(4),
                     EntryStatus(online, stale, removed),
                     reader.GetInt64(8), Local(reader.GetInt64(9)), Local(reader.GetInt64(7)),
-                    string.Join("; ", evidence.Distinct()), online && !stale && !removed &&
+                    string.Join("; ", evidence), online && !stale && !removed &&
                         !WindowsVolumes.HasRecallRisk(attributes) && !attributes.HasFlag(FileAttributes.ReparsePoint),
                     attributes.HasFlag(FileAttributes.Directory)));
             }

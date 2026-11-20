@@ -8,13 +8,15 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
         string directory = Path.Combine(Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData), "FileInventory");
         bool benchmark = args.Contains("--benchmark", StringComparer.Ordinal);
         if (benchmark) directory = Path.Combine(directory, "Benchmark");
+        CrashDumps.Register(directory);
         try
         {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+            ApplicationConfiguration.Initialize();
             // The lock also prevents abandoned staging files from being recovered by a live instance.
             Directory.CreateDirectory(directory);
             using var singleInstance = new FileStream(Path.Combine(directory, "instance.lock"),
@@ -39,6 +41,8 @@ static class Program
         }
         catch (Exception ex)
         {
+            CrashDumps.Capture(directory, ex);
+            Environment.ExitCode = 1;
             MessageBox.Show(ex.Message, "File Inventory", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }

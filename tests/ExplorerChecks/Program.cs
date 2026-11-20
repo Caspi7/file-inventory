@@ -28,7 +28,13 @@ Check(fileDetails is { CanReveal:true } && fileDetails.Bytes==liveFile.Length
 Check(catalog.QueryPage("",new(Volume:id),0,256,"Projects").Rows.Any(h=>h.Name=="Empty" && h.IsDirectory),"empty directory retained");
 Check(catalog.QueryPage("",new(Volume:id),0,256,"Projects\\Empty").Total==0,"empty directory can be browsed");
 Check(catalog.QueryPage("CAFÉ (Q4)",new(Volume:id),0,256).Total==1,"accent and punctuation search");
-Check(catalog.QueryPage("pr ne",new(Volume:id),0,256).Total==625,"mixed ancestor and filename short prefixes");
+Check(catalog.QueryPage("pr ne",new(Volume:id),0,256).Total==0,"mixed ancestor and filename prefixes excluded");
+foreach (string name in new[] { "reports", "re" })
+{
+    var matches = catalog.IndexSearch(name, new(Volume:id), CancellationToken.None);
+    var folder = catalog.ReadSearchPage(name, matches, 0, 256, CancellationToken.None).Single();
+    Check(folder.Name == "Reports" && folder.IsDirectory, $"own-name search {name} excludes all 625 descendants");
+}
 Check(catalog.QueryPage("needle",new(Volume:id,Extension:"pdf"),0,256).Total==0,"combined filter excludes other extensions");
 var success=catalog.Volumes().Single().Succeeded;
 await new Scanner(catalog).ScanAsync(volume,new Progress<ScanProgress>(),new CancellationToken(true));
