@@ -40,21 +40,28 @@ sealed partial class InventoryWindow
         refresh.Dock = DockStyle.None;
         refresh.Width = 175;
         refresh.Height = 36;
-        scanState.AutoSize = false;
-        scanState.Dock = DockStyle.Fill;
-        scanState.MaximumSize = Size.Empty;
+        scanState.Dock = DockStyle.Top;
         scanState.UseMnemonic = false;
         location.UseMnemonic = false;
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(8);
         toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive]);
-        var scanLine = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 55, ColumnCount = 2,
+        var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 4, 8, 4) };
         scanLine.ColumnStyles.Add(new(SizeType.Absolute, 265));
         scanLine.ColumnStyles.Add(new(SizeType.Percent, 100));
+        scanLine.RowStyles.Add(new(SizeType.AutoSize));
         scanLine.Controls.Add(scanBar, 0, 0);
         scanLine.Controls.Add(scanState, 1, 0);
+        scanLine.SizeChanged += (_, _) =>
+        {
+            var columns = scanLine.GetColumnWidths();
+            if (columns.Length < 2 || columns[1] <= scanState.Margin.Horizontal) return;
+            var maximum = new Size(columns[1] - scanState.Margin.Horizontal, 0);
+            if (scanState.MaximumSize != maximum) scanState.MaximumSize = maximum;
+        };
         scanUiTimer.Tick += (_, _) => UpdateScanDisplay();
         scanUiTimer.Start();
         FormClosed += (_, _) => { scanUiTimer.Dispose(); queryCancellation?.Dispose(); pageCancellation.Dispose(); };
