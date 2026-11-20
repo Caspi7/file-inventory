@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS files (
  name_key TEXT NOT NULL, parent_key TEXT NOT NULL, extension TEXT NOT NULL,
  bytes INTEGER NOT NULL, modified INTEGER NOT NULL, created INTEGER NOT NULL,
  attributes INTEGER NOT NULL, seen INTEGER NOT NULL, stale INTEGER NOT NULL DEFAULT 0,
- file_key TEXT, UNIQUE(volume, rel)
+ file_key TEXT, removed INTEGER, UNIQUE(volume, rel)
 );
 CREATE INDEX IF NOT EXISTS files_name ON files(name_key);
 CREATE INDEX IF NOT EXISTS files_volume_identity ON files(volume,file_key);

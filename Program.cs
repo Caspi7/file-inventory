@@ -29,7 +29,13 @@ static class Program
             }
             foreach (var path in Directory.EnumerateFiles(directory, "scan-*.sqlite3*"))
                 File.Delete(path);
-            Application.Run(new InventoryWindow(catalog, benchmark));
+            using var window = new InventoryWindow(catalog, benchmark);
+            Application.Run(window);
+            if (window.UpdateInstaller is { } installer)
+            {
+                singleInstance.Dispose();
+                AppUpdates.RunInstaller(installer);
+            }
         }
         catch (Exception ex)
         {
@@ -70,21 +76,19 @@ sealed partial class InventoryWindow : Form
     readonly Button copy = new() { Text = "Copy path", AutoSize = true };
     readonly Button candidates = new() { Text = "Find possible copies", AutoSize = true };
     readonly Button reveal = new() { Text = "Reveal in Explorer", AutoSize = true };
-    readonly DataGridView results = new()
+    readonly ListView results = new()
     {
-        Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false, AutoGenerateColumns = false, RowHeadersVisible = false,
-        MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect
+        Dock = DockStyle.Fill, View = View.Details, VirtualMode = true, Scrollable = true,
+        MultiSelect = false, FullRowSelect = true, HideSelection = false, AccessibleName = "Inventory results"
     };
     readonly System.Windows.Forms.Timer heartbeat = new() { Interval = 15000 };
-    readonly System.Windows.Forms.Timer debounce = new() { Interval = 120 };
-    readonly NotifyIcon tray = new() { Icon = SystemIcons.Application, Text = "File Inventory" };
+    readonly Icon appIcon = LoadAppIcon();
+    readonly NotifyIcon tray = new() { Text = "File Inventory" };
     readonly Dictionary<string, (CancellationTokenSource Cancellation, Task Work)> running = new();
     readonly Dictionary<string, ScanProgress> progress = new();
     List<Volume> volumes = [];
-    bool restoring, discovering, searching, closing, readyToClose;
+    bool restoring, discovering, closing, readyToClose;
     int revision;
-    long queuedAt;
     bool savingSchedule;
     string? selectedId, displayedSchedule;
     (bool? Enabled, double? Hours) scheduleVersion;
@@ -97,6 +101,8 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         scanner = new(catalog);
         Text = benchmark ? "File Inventory · Benchmark" : "File Inventory";
+        Icon = appIcon;
+        tray.Icon = appIcon;
         Width = 1370;
         Height = 830;
         MinimumSize = new(850, 630);
@@ -159,20 +165,27 @@ sealed partial class InventoryWindow : Form
         foreach (var box in new[] { from, through }) box.ValueChanged += (_, _) => QueueSearch();
         status.SelectedIndexChanged += (_, _) => QueueSearch();
         scope.SelectedIndexChanged += (_, _) => { if (!restoring) SelectBrowserDrive(); };
-        results.SelectionChanged += (_, _) => ShowActions();
-        results.CellClick += async (_, e) => { if (e.RowIndex >= 0) await LocateCurrentHit(); };
-        results.CellDoubleClick += async (_, e) => { if (e.RowIndex >= 0 && CurrentHit() is { IsDirectory: true }) await OpenCurrentFolder(true); };
-        debounce.Tick += async (_, _) => { debounce.Stop(); await Search(); };
+        results.SelectedIndexChanged += (_, _) => ShowActions();
+        results.MouseClick += async (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && results.HitTest(e.Location).Item is not null)
+                await LocateCurrentHit();
+        };
+        results.MouseDoubleClick += async (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && results.HitTest(e.Location).Item is not null
+                && CurrentHit() is { IsDirectory: true }) await OpenCurrentFolder(true);
+        };
         heartbeat.Tick += async (_, _) => await Poll();
 
-        AddColumn("Filename", nameof(Hit.Name), 180);
-        AddColumn("Full path", nameof(Hit.FullPath), 270, fill: true);
-        AddColumn("Volume", nameof(Hit.Label), 100);
-        AddColumn("Status", nameof(Hit.Status), 95);
-        AddColumn("Last seen", nameof(Hit.LastSeen), 145);
-        AddColumn("Bytes", nameof(Hit.Bytes), 90);
-        AddColumn("Modified", nameof(Hit.Modified), 145);
-        AddColumn("Matched", nameof(Hit.Matched), 220);
+        results.Columns.Add("Filename", 180);
+        results.Columns.Add("Full path", 320);
+        results.Columns.Add("Volume", 100);
+        results.Columns.Add("Status", 95);
+        results.Columns.Add("Last seen", 145);
+        results.Columns.Add("Bytes", 90, HorizontalAlignment.Right);
+        results.Columns.Add("Modified", 145);
+        results.Columns.Add("Matched", 220);
 
         InitializeBrowser();
 
@@ -194,9 +207,17 @@ sealed partial class InventoryWindow : Form
             QueueSearch();
         };
         FormClosing += HandleClose;
-        FormClosed += (_, _) => { tray.Dispose(); debounce.Dispose(); heartbeat.Dispose(); };
+        FormClosed += (_, _) => { tray.Dispose(); appIcon.Dispose(); heartbeat.Dispose(); };
         ShowVolume();
         ShowActions();
+    }
+
+    static Icon LoadAppIcon()
+    {
+        using var artwork = typeof(InventoryWindow).Assembly.GetManifestResourceStream("FileInventory.AppIcon.ico");
+        if (artwork is null) return (Icon)SystemIcons.Application.Clone();
+        using var icon = new Icon(artwork);
+        return (Icon)icon.Clone();
     }
 
     static Label LabelFor(string text) => new() { Text = text, AutoSize = true, Margin = new(4, 7, 4, 4) };
@@ -205,14 +226,6 @@ sealed partial class InventoryWindow : Form
         Dock = DockStyle.Fill, ColumnCount = 1, RowCount = rows, Padding = new Padding(8)
     };
     static FlowLayoutPanel Flow() => new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-
-    void AddColumn(string title, string property, int width, bool fill = false) =>
-        results.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            HeaderText = title, DataPropertyName = property, Width = width, MinimumWidth = 90,
-            SortMode = DataGridViewColumnSortMode.NotSortable,
-            AutoSizeMode = fill ? DataGridViewAutoSizeColumnMode.Fill : DataGridViewAutoSizeColumnMode.None
-        });
 
     void OpenWindow()
     {
@@ -228,8 +241,12 @@ sealed partial class InventoryWindow : Form
         var ids = drives.SelectedItems.Cast<Choice>().Select(choice => choice.Id).ToHashSet();
         return volumes.Where(volume => ids.Contains(volume.Id)).ToList();
     }
-    Hit? CurrentHit() => results.CurrentCell is { } cell && pageCache.TryGetValue(cell.RowIndex / PageSize, out var page)
-        && cell.RowIndex % PageSize < page.Count ? page[cell.RowIndex % PageSize] : null;
+    int SelectedResult => results.SelectedIndices.Count == 0 ? -1 : results.SelectedIndices[0];
+
+    Hit? CurrentHit() => activeRevision == revision ? CachedResult(SelectedResult) : null;
+
+    Hit? CachedResult(int index) => index >= 0 && pageCache.TryGetValue(index / PageSize, out var page)
+        && index % PageSize < page.Count ? page[index % PageSize] : null;
     void ShowActions()
     {
         copy.Enabled = candidates.Enabled = CurrentHit() is not null;
@@ -328,7 +345,8 @@ sealed partial class InventoryWindow : Form
         foreach (var volume in volumes)
         {
             string label = volume.Label == volume.Mount ? volume.Mount : $"{volume.Label} ({volume.Mount})";
-            if (!volume.Online) label += " · Offline";
+            if (volume.Id.StartsWith("import:", StringComparison.Ordinal)) label += " · Imported";
+            else if (!volume.Online) label += " · Offline";
             var choice = new Choice(volume.Id, label);
             int index = drives.Items.Add(choice);
             if (selected.Contains(volume.Id)) drives.SetSelected(index, true);
@@ -352,7 +370,7 @@ sealed partial class InventoryWindow : Form
 
     void StartScan(Volume volume)
     {
-        if (running.ContainsKey(volume.Id) || closing) return;
+        if (running.ContainsKey(volume.Id) || closing || checkingUpdates || UpdateInstaller is not null) return;
         var source = new CancellationTokenSource();
         scanClocks[volume.Id] = Stopwatch.StartNew();
         var reporter = new Progress<ScanProgress>(update =>
@@ -388,29 +406,26 @@ sealed partial class InventoryWindow : Form
         }
     }
 
-    void QueueSearch()
+    async void QueueSearch()
     {
-        revision++;
+        if (closing) return;
+        int requested = ++revision;
+        long requestedAt = Stopwatch.GetTimestamp();
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
         activeRevision = -1;
-        queuedAt = Stopwatch.GetTimestamp();
-        debounce.Stop();
-        if (!closing) debounce.Start();
-    }
+        results.VirtualListSize = 0;
+        ShowActions();
+        searchProgress.Visible = true;
+        state.Text = "Loading inventory…";
 
-    async Task Search()
-    {
-        if (searching || closing) return;
-        int requested = revision;
-        long requestedAt = queuedAt;
-        var text = query.Text;
-        searching = true;
-        queryCancellation?.Dispose();
-        var cancellation = new CancellationTokenSource();
+        using var cancellation = new CancellationTokenSource();
         queryCancellation = cancellation;
         try
         {
+            await Task.Delay(120, cancellation.Token);
+            if (closing || requested != revision) return;
+            string text = query.Text;
             long? low = ParseBytes(min.Text), high = ParseBytes(max.Text);
             if (low > high) throw new FormatException("The maximum size must be at least the minimum.");
             long? start = from.Checked ? Timestamp(from.Value.Date) : null;
@@ -418,20 +433,28 @@ sealed partial class InventoryWindow : Form
             if (start >= end) throw new FormatException("The end date must be on or after the start date.");
             var volume = (scope.SelectedItem as Choice)?.Id;
             var parent = string.IsNullOrWhiteSpace(text) && volume is not null ? browseParent : null;
-            var filters = new Filters(volume,
+            bool fileSearch = !string.IsNullOrWhiteSpace(text);
+            var filters = new Filters(fileSearch ? null : volume,
                 string.IsNullOrWhiteSpace(extension.Text) ? null : extension.Text.Trim(),
-                low, high, start, end, status.SelectedIndex == 0 ? null : status.SelectedIndex == 1);
-            state.Text = "Loading inventory…";
-            var page = await Task.Run(() => catalog.QueryPage(text, filters, 0, PageSize, parent, cancellationToken: cancellation.Token));
+                low, high, start, end, status.SelectedIndex == 0 ? null : status.SelectedIndex == 1,
+                fileSearch ? searchDrives?.ToArray() : null, includeRemoved.Checked);
+            var token = cancellation.Token;
+            var (page, ids) = await Task.Run(() =>
+            {
+                if (!fileSearch)
+                    return (catalog.QueryPage(text, filters, 0, PageSize, parent, cancellationToken: token), (List<long>?)null);
+                var matches = catalog.IndexSearch(text, filters, token);
+                return (new CatalogPage(matches.Count, catalog.ReadSearchPage(text, matches, 0, PageSize, token)), matches);
+            }, token);
             if (closing || requested != revision) return;
-            results.RowCount = 0;
             pageGeneration++;
             pageCancellation.Dispose();
             pageCancellation = new CancellationTokenSource();
             pageCache.Clear(); pendingPages.Clear();
             activeInput = text; activeFilters = filters; activeParent = parent; activeRevision = requested;
             pageCache[0] = page.Rows;
-            results.RowCount = page.Total;
+            activeMatches = ids;
+            results.VirtualListSize = page.Total;
             results.Invalidate();
             location.Text = string.IsNullOrWhiteSpace(text)
                 ? volume is null ? "All indexed files and folders" : Path.Combine(volumes.First(v => v.Id == volume).Mount, browseParent)
@@ -443,14 +466,15 @@ sealed partial class InventoryWindow : Form
         {
             if (closing || requested != revision || cancellation.IsCancellationRequested) return;
             pageGeneration++; pageCache.Clear(); pendingPages.Clear();
-            results.RowCount = 0;
+            activeMatches = null;
+            results.VirtualListSize = 0;
             state.Text = ex.Message;
             ShowActions();
         }
         finally
         {
-            searching = false;
-            if (!closing && requested != revision) debounce.Start();
+            if (queryCancellation == cancellation) queryCancellation = null;
+            if (!closing && requested == revision) searchProgress.Visible = false;
         }
     }
 
@@ -466,13 +490,17 @@ sealed partial class InventoryWindow : Form
 
     async void HandleClose(object? sender, FormClosingEventArgs e)
     {
+        if (transferringInventory || checkingUpdates)
+        {
+            e.Cancel = true;
+            return;
+        }
         if (readyToClose) return;
         closing = true;
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
         scanUiTimer.Stop();
         heartbeat.Stop();
-        debounce.Stop();
         var scans = running.Values.ToArray();
         if (scans.Length == 0) return;
         e.Cancel = true;

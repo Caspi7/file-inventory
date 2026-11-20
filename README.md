@@ -70,3 +70,11 @@ The optimized scanner writes less temporary data and reuses search and metadata 
 ## Install or uninstall
 
 Run the Windows x64 setup executable to install File Inventory for the current Windows user. Use **Settings → Apps** to uninstall it. See [installer instructions](installer/README.md) to rebuild the setup package.
+
+## Drive Library, backups, and removed files
+
+Filename searches cover all scanned and imported drives by default, including offline drives. Choose **Drive Library** to check any combination of drives, or use **Search this drive** for the drive currently selected in **Browse drive**. Folder browsing and scanning still use the browse selector.
+
+Use **Export selected drive** to save a compressed `.fiinventory` file, then **Import inventory** on another PC to search it. Exports contain file and folder names, paths, timestamps, sizes, and status. They contain no file contents. Share them only with people meant to see those paths. Importing a newer export of the same inventory replaces the imported snapshot and leaves local scans alone.
+
+After a scan confirms an entry is missing, the library retains its last known path and metadata with **Removed** status. The details pane shows when it was last seen and first detected missing. Clear **Show removed files** to hide these records. Paths found again become present. Offline or inaccessible locations alone do not mark files as removed. This history starts with scans run after the update.

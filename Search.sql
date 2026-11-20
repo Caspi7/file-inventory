@@ -32,5 +32,5 @@ WITH candidates AS (
  AND (substr(name_key,1,length($query))=$query OR NOT EXISTS(SELECT 1 FROM json_each($short) WHERE NOT EXISTS(
   SELECT 1 FROM prefixes WHERE token=value AND file_id=f.id)))
 )
-SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,rank,contextual
+SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,rank,contextual,removed
 FROM ranked ORDER BY contextual,rank, length(name), name_key, volume, rel LIMIT 50;

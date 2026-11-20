@@ -56,8 +56,9 @@ def main():
             assert find(reader, "old.docx") and not find(reader, "renamed.docx")
             stage_publish()
             writer.commit()
-            assert not find(reader, "old.docx") and not find(reader, "obsolete.txt")
-            assert not find(reader, "delete.txt")
+            assert reader.execute("SELECT name,removed FROM files WHERE removed IS NOT NULL ORDER BY name").fetchall() == [
+                ("delete.txt", 3000), ("obsolete.txt", 3000), ("old.docx", 3000)]
+            assert find(reader, "old.docx") and find(reader, "delete.txt")
             assert find(reader, "renamed.docx")[0][7] == 3000
             assert find(reader, "hidden.docx")[0][6] == 1
             assert len(find(reader, "shared", volume=VOLUME)) == 2

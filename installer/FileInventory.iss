@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.0.0"
+  #define BuildVersion "1.2.3"
 #endif
 
 [Setup]
@@ -15,7 +15,8 @@ AppVersion={#BuildVersion}
 AppPublisher=File Inventory
 DefaultDirName={localappdata}\Programs\File Inventory
 DefaultGroupName=File Inventory
-DisableDirPage=yes
+DisableDirPage=no
+UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 MinVersion=10.0
@@ -26,6 +27,7 @@ OutputBaseFilename=FileInventory_Setup_x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\Assets\FileInventory.ico
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\FileInventory.exe
@@ -41,3 +43,15 @@ Name: "{userprograms}\File Inventory"; Filename: "{app}\FileInventory.exe"; Work
 
 [Run]
 Filename: "{app}\FileInventory.exe"; Description: "Open File Inventory"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\FileInventory.exe"; Flags: nowait skipifnotsilent; Check: IsAppUpdate
+
+[Code]
+function IsAppUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/UPDATE') = 0 then Exit;
+  Result := False;
+end;
