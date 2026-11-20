@@ -54,7 +54,8 @@ sealed partial class InventoryWindow : Form
     readonly bool benchmark;
     readonly Scanner scanner;
     readonly TextBox query = new() { Width = 310, MaxLength = 500, PlaceholderText = "Search filenames and folders" };
-    readonly TextBox extension = new() { Width = 85, PlaceholderText = "e.g. docx" };
+    readonly ComboBox extension = new() { Width = 105, DropDownStyle = ComboBoxStyle.DropDown,
+        AccessibleName = "Extension filter" };
     readonly TextBox min = new() { Width = 85, PlaceholderText = "Minimum" };
     readonly TextBox max = new() { Width = 85, PlaceholderText = "Maximum" };
     readonly DateTimePicker from = new() { Width = 120, ShowCheckBox = true, Checked = false, Format = DateTimePickerFormat.Short };
@@ -165,7 +166,8 @@ sealed partial class InventoryWindow : Form
             catch (Exception ex) { state.Text = ex.Message; }
         };
 
-        foreach (var box in new[] { query, extension, min, max }) box.TextChanged += (_, _) => QueueSearch();
+        extension.Items.AddRange([".csv", ".docx", ".jpg", ".mp3", ".mp4", ".pdf", ".png", ".pptx", ".txt", ".xlsx", ".zip"]);
+        foreach (var box in new Control[] { query, extension, min, max }) box.TextChanged += (_, _) => QueueSearch();
         foreach (var box in new[] { from, through }) box.ValueChanged += (_, _) => QueueSearch();
         status.SelectedIndexChanged += (_, _) => QueueSearch();
         scope.SelectedIndexChanged += (_, _) => { if (!restoring) SelectBrowserDrive(); };
