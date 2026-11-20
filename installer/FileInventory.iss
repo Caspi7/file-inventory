@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.1.0"
+  #define BuildVersion "1.1.1"
 #endif
 
 [Setup]
@@ -15,7 +15,8 @@ AppVersion={#BuildVersion}
 AppPublisher=File Inventory
 DefaultDirName={localappdata}\Programs\File Inventory
 DefaultGroupName=File Inventory
-DisableDirPage=yes
+DisableDirPage=no
+UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 MinVersion=10.0

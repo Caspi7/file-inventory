@@ -1,6 +1,8 @@
 # Windows installer
 
-Run `FileInventory_Setup_x64.exe` and follow the setup wizard. The installer puts the self-contained app in `%LOCALAPPDATA%\Programs\File Inventory` and adds **File Inventory** to the Start menu. The installer runs for the current user without administrator rights.
+Run `FileInventory_Setup_x64.exe` and follow the setup wizard. Use **Browse** on the destination page to select a writable installation folder, or accept `%LOCALAPPDATA%\Programs\File Inventory`. Setup adds **File Inventory** to the Start menu and runs for the current user without administrator rights.
+
+For an update, keep the previous folder selected by Setup. To move an existing installation, uninstall it first, then run Setup and pick the new location. Use a separate folder from `%LOCALAPPDATA%\FileInventory`, which holds your catalog and settings.
 
 Uninstall via **Settings → Apps**, or run `unins000.exe` from the install directory. Close File Inventory first if you have a scan running. The uninstaller removes the installed app and shortcut. Your offline inventory, catalog, and settings remain in `%LOCALAPPDATA%\FileInventory` for future installations.
 
