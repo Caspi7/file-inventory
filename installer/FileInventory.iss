@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.1.1"
+  #define BuildVersion "1.2.0"
 #endif
 
 [Setup]
@@ -42,3 +42,15 @@ Name: "{userprograms}\File Inventory"; Filename: "{app}\FileInventory.exe"; Work
 
 [Run]
 Filename: "{app}\FileInventory.exe"; Description: "Open File Inventory"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\FileInventory.exe"; Flags: nowait skipifnotsilent; Check: IsAppUpdate
+
+[Code]
+function IsAppUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/UPDATE') = 0 then Exit;
+  Result := False;
+end;

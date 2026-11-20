@@ -29,7 +29,13 @@ static class Program
             }
             foreach (var path in Directory.EnumerateFiles(directory, "scan-*.sqlite3*"))
                 File.Delete(path);
-            Application.Run(new InventoryWindow(catalog, benchmark));
+            using var window = new InventoryWindow(catalog, benchmark);
+            Application.Run(window);
+            if (window.UpdateInstaller is { } installer)
+            {
+                singleInstance.Dispose();
+                AppUpdates.RunInstaller(installer);
+            }
         }
         catch (Exception ex)
         {
@@ -353,7 +359,7 @@ sealed partial class InventoryWindow : Form
 
     void StartScan(Volume volume)
     {
-        if (running.ContainsKey(volume.Id) || closing) return;
+        if (running.ContainsKey(volume.Id) || closing || checkingUpdates || UpdateInstaller is not null) return;
         var source = new CancellationTokenSource();
         scanClocks[volume.Id] = Stopwatch.StartNew();
         var reporter = new Progress<ScanProgress>(update =>
@@ -469,7 +475,7 @@ sealed partial class InventoryWindow : Form
 
     async void HandleClose(object? sender, FormClosingEventArgs e)
     {
-        if (transferringInventory)
+        if (transferringInventory || checkingUpdates)
         {
             e.Cancel = true;
             return;

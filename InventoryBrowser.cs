@@ -36,6 +36,7 @@ sealed partial class InventoryWindow
     {
         scope.Width = 260;
         InitializeLibrary();
+        InitializeUpdates();
         query.Width = 320;
         refresh.Dock = DockStyle.None;
         refresh.Width = 175;
@@ -46,7 +47,7 @@ sealed partial class InventoryWindow
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(8);
-        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive]);
+        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton]);
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 4, 8, 4) };

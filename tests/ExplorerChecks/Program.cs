@@ -95,4 +95,20 @@ Check(ScanDisplay.Create(new(1000,0,"",10,1000,"Complete"),TimeSpan.FromSeconds(
 Check(ScanDisplay.Create(new(100,0,""),TimeSpan.FromSeconds(10),true).Text.Contains("Cancelling"),"cancel state is visible");
 try { catalog.QueryPage("needle",new(Volume:id),0,256,cancellationToken:new CancellationToken(true)); throw new Exception("Expected cancellation"); }
 catch(OperationCanceledException){Console.WriteLine("PASS cancelled query stops before reading");}
-Console.WriteLine("All Explorer catalog, scanner and progress checks passed.");
+var digest = "sha256:" + new string('a', 64);
+object Update(string version, string? checksum, string owner = "Caspi7", bool draft = false) => new
+{
+    draft, tag_name = $"v{version}-preview", assets = new[] { new { state = "uploaded", size = 123,
+        name = $"FileInventory_Setup_x64_{version}.exe", digest = checksum,
+        browser_download_url = $"https://github.com/{owner}/file-inventory/releases/download/v{version}-preview/FileInventory_Setup_x64_{version}.exe" } }
+};
+using (var releases = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new[]
+    { Update("1.3.0", digest), Update("1.4.0", null), Update("1.5.0", digest, "other-owner"),
+      Update("1.6.0", digest, draft: true), Update("1.2.0", digest) })))
+{
+    Check(AppUpdates.SelectRelease(releases.RootElement, new(1, 2, 0, 0))?.Version == new Version(1, 3, 0),
+        "updater selects newest verified File Inventory release and ignores wrong repository, missing hash, and drafts");
+    Check(AppUpdates.SelectRelease(releases.RootElement, new(1, 3, 0)) is null,
+        "updater ignores the running version and older releases");
+}
+Console.WriteLine("All Explorer catalog, scanner, progress and update checks passed.");

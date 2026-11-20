@@ -29,7 +29,7 @@ sealed partial class InventoryWindow
 
     async Task OpenDriveLibrary()
     {
-        if (transferringInventory) return;
+        if (transferringInventory || checkingUpdates) return;
         using var window = new Form { Text = "Drive Library", StartPosition = FormStartPosition.CenterParent,
             ClientSize = new Size(570, 395), MinimumSize = new Size(500, 330), Font = Font, ShowInTaskbar = false };
         var list = new CheckedListBox { CheckOnClick = true, Dock = DockStyle.Fill, IntegralHeight = false,
