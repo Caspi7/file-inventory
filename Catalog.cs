@@ -14,11 +14,11 @@ record Hit(string Name, string FullPath, string RelativePath, string Volume, str
     long Bytes, DateTime Modified, DateTime LastSeen, string Matched, bool CanReveal, bool IsDirectory = false);
 record CatalogPage(int Total, List<Hit> Rows);
 record FileMetadata(string Name, string FullPath, string Volume, string Status, long Bytes,
-    DateTime Created, DateTime Modified, DateTime LastSeen, FileAttributes Attributes, bool CanReveal);
+    DateTime Created, DateTime Modified, DateTime LastSeen, FileAttributes Attributes, bool CanReveal, DateTime? Removed);
 record Filters(string? Volume = null, string? Extension = null, long? Min = null, long? Max = null,
-    long? From = null, long? Through = null, bool? Online = null);
+    long? From = null, long? Through = null, bool? Online = null, IReadOnlyList<string>? Drives = null, bool IncludeRemoved = true);
 
-sealed class Catalog
+sealed partial class Catalog
 {
     public string DataDirectory { get; }
     readonly string database;
@@ -35,6 +35,9 @@ sealed class Catalog
         database = Path.Combine(dataDirectory, "catalog.sqlite3");
         using var db = Open();
         Execute(db, Resource("Catalog.sql"));
+        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('files') WHERE name='removed';"))
+            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
+                Execute(db, "ALTER TABLE files ADD COLUMN removed INTEGER;");
         BackfillFolders(db);
         var config = Path.Combine(dataDirectory, "aliases.json");
         if (!File.Exists(config))
@@ -141,7 +144,7 @@ sealed class Catalog
     {
         using var db = Open();
         using var command = Command(db, """
-            SELECT f.name,v.mount,v.label,v.online,f.stale,f.bytes,f.created,f.modified,f.seen,f.attributes
+            SELECT f.name,v.mount,v.label,v.online,f.stale,f.bytes,f.created,f.modified,f.seen,f.attributes,f.removed
             FROM files f JOIN volumes v ON v.id=f.volume
             WHERE f.volume=$volume AND f.rel=$relative AND (f.attributes & 16)=0;
             """, ("volume", volume), ("relative", relative));
@@ -149,11 +152,12 @@ sealed class Catalog
         if (!reader.Read()) return null;
         bool online = reader.GetBoolean(3), stale = reader.GetBoolean(4);
         var attributes = (FileAttributes)reader.GetInt32(9);
+        DateTime? removed = reader.IsDBNull(10) ? null : Local(reader.GetInt64(10));
         return new(reader.GetString(0), Path.Combine(reader.GetString(1), relative), reader.GetString(2),
-            online ? stale ? "Stale" : "Online" : stale ? "Offline · stale" : "Offline",
+            EntryStatus(online, stale, removed is not null),
             reader.GetInt64(5), Local(reader.GetInt64(6)), Local(reader.GetInt64(7)), Local(reader.GetInt64(8)),
-            attributes, online && !stale && !WindowsVolumes.HasRecallRisk(attributes)
-                && !attributes.HasFlag(FileAttributes.ReparsePoint));
+            attributes, online && !stale && removed is null && !WindowsVolumes.HasRecallRisk(attributes)
+                && !attributes.HasFlag(FileAttributes.ReparsePoint), removed);
     }
 
     public CatalogPage QueryPage(string input, Filters filters, int offset, int limit,
@@ -181,7 +185,7 @@ sealed class Catalog
             ("min", filters.Min), ("max", filters.Max), ("modifiedFrom", filters.From),
             ("modifiedThrough", filters.Through), ("online", filters.Online) };
         var sql = query.Length > 0 ? search : """
-            SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,3,0
+            SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,3,0,removed
             FROM files f JOIN volumes v ON v.id=f.volume
             WHERE ($volume IS NULL OR f.volume=$volume)
               AND ($extension IS NULL OR extension=$extension)
@@ -202,6 +206,10 @@ sealed class Catalog
                 : "WITH candidates AS (SELECT file_id AS id FROM prefixes WHERE token=$firstShort)";
             sql = candidates + sql[ranked..];
         }
+        sql = sql.Replace("WHERE ($volume IS NULL OR f.volume=$volume)",
+            "WHERE ($volume IS NULL OR f.volume=$volume)" +
+            (filters.Drives is null ? "" : " AND f.volume IN (SELECT value FROM json_each($drives))") +
+            (filters.IncludeRemoved ? "" : " AND f.removed IS NULL"), StringComparison.Ordinal);
         // Concrete predicates allow SQLite to seek the volume/parent indexes.
         foreach (var (optional, predicate, enabled) in new[] {
             ("($volume IS NULL OR f.volume=$volume)", "f.volume=$volume", filters.Volume is not null),
@@ -214,7 +222,7 @@ sealed class Catalog
             ("($parent IS NULL OR parent_key=$parent)", "parent_key=$parent", parent is not null) })
             sql = sql.Replace(optional, enabled ? predicate : "1", StringComparison.Ordinal);
         args = [.. args, ("parent", parent is null ? null : Key(parent)),
-            ("limit", limit), ("offset", offset)];
+            ("limit", limit), ("offset", offset), ("drives", JsonSerializer.Serialize(filters.Drives))];
         int total = -1;
         if (includeCount)
         {
@@ -240,6 +248,7 @@ sealed class Catalog
                 var online = reader.GetBoolean(5);
                 var stale = reader.GetBoolean(6);
                 var attributes = (FileAttributes)reader.GetInt32(10);
+                bool removed = !reader.IsDBNull(13);
                 var directory = Path.GetDirectoryName(rel) ?? "";
                 var evidence = new List<string>();
                 foreach (var term in terms)
@@ -257,9 +266,9 @@ sealed class Catalog
                     }
                 }
                 rows.Add(new(name, Path.Combine(reader.GetString(2), rel), rel, reader.GetString(3), reader.GetString(4),
-                    online ? stale ? "Stale" : "Online" : stale ? "Offline · stale" : "Offline",
+                    EntryStatus(online, stale, removed),
                     reader.GetInt64(8), Local(reader.GetInt64(9)), Local(reader.GetInt64(7)),
-                    string.Join("; ", evidence.Distinct()), online && !stale &&
+                    string.Join("; ", evidence.Distinct()), online && !stale && !removed &&
                         !WindowsVolumes.HasRecallRisk(attributes) && !attributes.HasFlag(FileAttributes.ReparsePoint),
                     attributes.HasFlag(FileAttributes.Directory)));
             }
@@ -316,7 +325,7 @@ sealed class Catalog
             JOIN files c ON c.bytes=selected.bytes AND c.modified=selected.modified AND c.created=selected.created
             JOIN volumes v ON v.id=c.volume
             WHERE selected.volume=$volume AND selected.rel=$rel AND selected.bytes>0
-              AND c.volume<>selected.volume
+              AND c.volume<>selected.volume AND c.removed IS NULL AND selected.removed IS NULL
             ORDER BY c.stale,v.online DESC,c.id LIMIT 20;
             """, ("volume", hit.Volume), ("rel", hit.RelativePath));
         using var reader = command.ExecuteReader();
@@ -329,6 +338,9 @@ sealed class Catalog
         }
         return paths;
     }
+
+    static string EntryStatus(bool online, bool stale, bool removed) => removed ? "Removed" :
+        online ? stale ? "Stale" : "Online" : stale ? "Offline · stale" : "Offline";
 
     public static DateTime Local(long stamp) => DateTimeOffset.FromUnixTimeMilliseconds(stamp).LocalDateTime;
     public static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

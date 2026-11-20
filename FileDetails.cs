@@ -33,7 +33,8 @@ sealed partial class InventoryWindow
                 metadata.FullPath,
                 $"Size: {metadata.Bytes:N0} bytes    Drive: {metadata.Volume}    Status: {metadata.Status}",
                 $"Created: {metadata.Created:G}    Modified: {metadata.Modified:G}",
-                $"Last indexed: {metadata.LastSeen:G}    Attributes: {metadata.Attributes}");
+                $"Last seen: {metadata.LastSeen:G}    Attributes: {metadata.Attributes}",
+                metadata.Removed is { } removed ? $"Detected missing: {removed:G}" : "");
             fileDetails.Visible = true;
 
             if (!openExplorer || benchmark || !metadata.CanReveal) return;

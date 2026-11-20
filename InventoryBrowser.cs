@@ -35,6 +35,7 @@ sealed partial class InventoryWindow
     void InitializeBrowser()
     {
         scope.Width = 260;
+        InitializeLibrary();
         query.Width = 320;
         refresh.Dock = DockStyle.None;
         refresh.Width = 175;
@@ -47,7 +48,7 @@ sealed partial class InventoryWindow
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(8);
-        toolbar.Controls.AddRange([LabelFor("Drive"), scope, refresh, cancel, browse]);
+        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive]);
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Fill, Height = 55, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 4, 8, 4) };
         scanLine.ColumnStyles.Add(new(SizeType.Absolute, 265));
@@ -60,7 +61,7 @@ sealed partial class InventoryWindow
         var filters = Flow();
         filters.Padding = new Padding(4);
         filters.Controls.AddRange([query, status, LabelFor("Extension"), extension,
-            LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"), through]);
+            LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"), through, includeRemoved]);
         var actions = Flow();
         actions.Controls.AddRange([copy, reveal, candidates, state]);
         var right = Stack(5);
@@ -240,7 +241,8 @@ sealed partial class InventoryWindow
     {
         try
         {
-            var page = await Task.Run(() => catalog.QueryPage("", new Filters(Volume: branch.Volume), offset, PageSize, branch.Relative));
+            bool showRemoved = includeRemoved.Checked;
+            var page = await Task.Run(() => catalog.QueryPage("", new Filters(Volume: branch.Volume, IncludeRemoved: showRemoved), offset, PageSize, branch.Relative));
             if (closing || node.TreeView != tree) return;
             tree.BeginUpdate();
             try
@@ -345,7 +347,13 @@ sealed partial class InventoryWindow
             if (CurrentHit() is not { } hit) return;
             int navigation = ++navigationRevision;
             var root = tree.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Tag is Branch b && b.Volume == hit.Volume);
-            if (root is null) return;
+            if (root is null)
+            {
+                var drive = volumes.FirstOrDefault(v => v.Id == hit.Volume);
+                if (drive is null) return;
+                root = MakeNode(drive.Id, "", $"{drive.Label} ({drive.Mount})", true);
+                tree.Nodes.Add(root);
+            }
             locating = true;
             var node = root;
             var parts = hit.RelativePath.Split('\\', StringSplitOptions.RemoveEmptyEntries);

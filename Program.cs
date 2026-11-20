@@ -328,7 +328,8 @@ sealed partial class InventoryWindow : Form
         foreach (var volume in volumes)
         {
             string label = volume.Label == volume.Mount ? volume.Mount : $"{volume.Label} ({volume.Mount})";
-            if (!volume.Online) label += " · Offline";
+            if (volume.Id.StartsWith("import:", StringComparison.Ordinal)) label += " · Imported";
+            else if (!volume.Online) label += " · Offline";
             var choice = new Choice(volume.Id, label);
             int index = drives.Items.Add(choice);
             if (selected.Contains(volume.Id)) drives.SetSelected(index, true);
@@ -418,9 +419,11 @@ sealed partial class InventoryWindow : Form
             if (start >= end) throw new FormatException("The end date must be on or after the start date.");
             var volume = (scope.SelectedItem as Choice)?.Id;
             var parent = string.IsNullOrWhiteSpace(text) && volume is not null ? browseParent : null;
-            var filters = new Filters(volume,
+            bool fileSearch = !string.IsNullOrWhiteSpace(text);
+            var filters = new Filters(fileSearch ? null : volume,
                 string.IsNullOrWhiteSpace(extension.Text) ? null : extension.Text.Trim(),
-                low, high, start, end, status.SelectedIndex == 0 ? null : status.SelectedIndex == 1);
+                low, high, start, end, status.SelectedIndex == 0 ? null : status.SelectedIndex == 1,
+                fileSearch ? searchDrives?.ToArray() : null, includeRemoved.Checked);
             state.Text = "Loading inventory…";
             var page = await Task.Run(() => catalog.QueryPage(text, filters, 0, PageSize, parent, cancellationToken: cancellation.Token));
             if (closing || requested != revision) return;
@@ -466,6 +469,11 @@ sealed partial class InventoryWindow : Form
 
     async void HandleClose(object? sender, FormClosingEventArgs e)
     {
+        if (transferringInventory)
+        {
+            e.Cancel = true;
+            return;
+        }
         if (readyToClose) return;
         closing = true;
         queryCancellation?.Cancel();

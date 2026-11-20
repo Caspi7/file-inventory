@@ -1,5 +1,5 @@
 -- Preserve observations in directories for which enumeration could not establish absence.
-UPDATE files SET stale=1 WHERE volume=$volume AND id IN (
+UPDATE files SET stale=1 WHERE volume=$volume AND removed IS NULL AND id IN (
  SELECT f.id FROM pending.coverage c CROSS JOIN files f
  WHERE c.complete=0 AND c.directory<>'' AND f.volume=$volume
  AND f.rel>=c.directory||char(92) AND f.rel<c.directory||char(93)
@@ -14,7 +14,7 @@ INSERT INTO scan_coverage SELECT $scan,directory,complete,detail FROM pending.co
 INSERT INTO moves
 WITH old_ids AS (
  SELECT file_key,min(rel) AS rel,min(created) AS created,min(stale) AS stale
- FROM files WHERE volume=$volume AND file_key IS NOT NULL
+ FROM files WHERE volume=$volume AND removed IS NULL AND file_key IS NOT NULL
  GROUP BY file_key HAVING count(*)=1
 ), new_ids AS (
  SELECT file_key,min(rel) AS rel,min(created) AS created
@@ -27,14 +27,15 @@ WHERE o.rel<>n.rel AND o.created=n.created AND o.stale=0
 
 -- Refresh at existing paths without rebuilding FTS for unchanged rows.
 UPDATE files AS f SET bytes=p.bytes,modified=p.modified,created=p.created,attributes=p.attributes,
- seen=$seen,stale=0,file_key=p.file_key,extension=p.extension
+ seen=$seen,stale=0,removed=NULL,file_key=p.file_key,extension=p.extension
 FROM pending.entries p WHERE f.volume=$volume AND f.rel=p.rel
 AND (f.bytes,f.modified,f.created,f.attributes,f.file_key,f.extension)
  IS NOT (p.bytes,p.modified,p.created,p.attributes,p.file_key,p.extension);
-UPDATE files AS f SET seen=$seen,stale=0
-WHERE f.volume=$volume AND (f.seen<>$seen OR f.stale<>0)
+UPDATE files AS f SET seen=$seen,stale=0,removed=NULL
+WHERE f.volume=$volume AND (f.seen<>$seen OR f.stale<>0 OR f.removed IS NOT NULL)
 AND EXISTS(SELECT 1 FROM pending.entries p WHERE p.rel=f.rel);
-DELETE FROM files AS f WHERE volume=$volume AND NOT EXISTS(SELECT 1 FROM pending.entries p WHERE p.rel=f.rel) AND NOT EXISTS(
+UPDATE files AS f SET removed=$seen,stale=0
+WHERE volume=$volume AND removed IS NULL AND NOT EXISTS(SELECT 1 FROM pending.entries p WHERE p.rel=f.rel) AND NOT EXISTS(
  SELECT 1 FROM pending.coverage c WHERE c.complete=0
  AND (c.directory='' OR substr(f.rel,1,length(c.directory)+1)=c.directory||char(92))
 );

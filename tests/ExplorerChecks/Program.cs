@@ -36,19 +36,48 @@ Check(catalog.Volumes().Single().Succeeded==success && catalog.QueryPage("needle
 File.Delete(Path.Combine(root,"Projects","Reports","Needle-0624.txt"));
 Directory.Delete(Path.Combine(root,"Projects","Empty"));
 await new Scanner(catalog).ScanAsync(volume,new Progress<ScanProgress>(),CancellationToken.None);
-Check(catalog.QueryPage("needle",new(Volume:id),0,256).Total==624,"refresh removes confirmed deleted file");
-Check(!catalog.QueryPage("",new(Volume:id),0,256,"Projects").Rows.Any(h=>h.Name=="Empty"),"refresh removes confirmed deleted folder");
+Check(catalog.QueryPage("needle",new(Volume:id,IncludeRemoved:false),0,256).Total==624,"hide removed files");
+Check(!catalog.QueryPage("",new(Volume:id,IncludeRemoved:false),0,256,"Projects").Rows.Any(h=>h.Name=="Empty"),"hide removed folders");
 catalog.Discover([]);
 var reopened=new Catalog(data);
-Check(reopened.QueryPage("needle",new(Volume:id,Online:false),0,256).Total==624,"offline persistence after reopening catalog");
-Check(reopened.QueryPage("needle",new(Volume:id),0,256).Rows.All(h=>!h.CanReveal && h.Status=="Offline"),"offline reveal disabled");
+Check(reopened.QueryPage("needle",new(Volume:id,Online:false),0,256).Total==625,"offline persistence after reopening catalog");
+Check(reopened.QueryPage("needle",new(Volume:id),0,256).Rows.All(h=>!h.CanReveal && (h.Status=="Offline" || h.Status=="Removed")),"offline reveal disabled");
 Check(reopened.GetFileMetadata(id,all[0].RelativePath) is { CanReveal:false, Status:"Offline" } saved
     && saved.Bytes==fileDetails!.Bytes && saved.Created==fileDetails.Created,"file metadata remains available offline");
-Check(reopened.QueryPage("pr ne",new(Volume:id),0,256).Total==624,"rescan preserves unchanged short-prefix rows");
+Check(reopened.QueryPage("pr ne",new(Volume:id),0,256).Total==625,"rescan preserves unchanged short-prefix rows");
+var removedPath="Projects\\Reports\\Needle-0624.txt";
+var missing=reopened.GetFileMetadata(id,removedPath);
+Check(missing is {Status:"Removed", Removed:not null, CanReveal:false} && missing.LastSeen <= missing.Removed,
+    "confirmed removal keeps metadata and its detection date");
+var archive=Path.Combine(data,"test.fiinventory");
+reopened.ExportInventory(id,archive);
+var imported=reopened.ImportInventory(archive);
+Check(imported!=id && reopened.QueryPage("needle",new(Drives:[id,imported]),0,256).Total==1250,
+    "checked drives search across local and imported inventories");
+Check(reopened.QueryPage("needle",new(Drives:[imported]),0,256).Total==625
+    && reopened.QueryPage("needle",new(Drives:[]),0,256).Total==0,"one checked drive and no checked drives");
+Check(reopened.GetFileMetadata(imported,removedPath) is {Status:"Removed", CanReveal:false},
+    "archived removal is searchable without access to the drive");
+Check(reopened.ImportInventory(archive)==imported && reopened.QueryPage("needle",new(Drives:[imported]),0,256).Total==625,
+    "repeat import replaces the snapshot without duplicating it");
+var invalid=Path.Combine(data,"invalid.fiinventory");
+using(var gz=new System.IO.Compression.GZipStream(File.Create(invalid),System.IO.Compression.CompressionLevel.Fastest))
+using(var writer=new StreamWriter(gz))
+using(var originalGz=new System.IO.Compression.GZipStream(File.OpenRead(archive),System.IO.Compression.CompressionMode.Decompress))
+using(var originalReader=new StreamReader(originalGz)) writer.WriteLine(originalReader.ReadLine());
+try { reopened.ImportInventory(invalid); throw new Exception("Expected invalid inventory error"); }
+catch(InvalidDataException) { Check(reopened.QueryPage("needle",new(Volume:imported),0,256).Total==625,
+    "failed import preserves previous snapshot"); }
+File.WriteAllText(Path.Combine(root,removedPath),"restored");
+reopened.Discover([volume]);
+await new Scanner(reopened).ScanAsync(volume,new Progress<ScanProgress>(),CancellationToken.None);
+Check(reopened.GetFileMetadata(id,removedPath) is {Status:"Online", Removed:null, CanReveal:true},
+    "a returning path is present again");
 using(var db=reopened.Open()){using var cmd=Catalog.Command(db,"PRAGMA integrity_check;");Check((string?)cmd.ExecuteScalar()=="ok","SQLite integrity");}
 string legacy=Path.Combine(data,"legacy");Directory.CreateDirectory(legacy);
 using(var db=new SqliteConnection($"Data Source={Path.Combine(legacy,"catalog.sqlite3")}")){
  db.Open();Catalog.Execute(db,Catalog.Resource("Catalog.sql"));
+ Catalog.Execute(db,"ALTER TABLE files DROP COLUMN removed;");
  Catalog.Execute(db,"INSERT INTO volumes(id,mount,label,online) VALUES('old','Z:\\','Old archive',0);");
  Catalog.Execute(db,"INSERT INTO files(volume,rel,name,name_key,parent_key,extension,bytes,modified,created,attributes,seen) VALUES('old','Old\\Nested\\saved.txt','saved.txt','saved.txt','old\\nested','txt',1,1000,1000,0,1000);");
 }
