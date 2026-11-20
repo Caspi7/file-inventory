@@ -50,7 +50,7 @@ Check(reopened.QueryPage("needle",new(Volume:id,Online:false),0,256).Total==625,
 Check(reopened.QueryPage("needle",new(Volume:id),0,256).Rows.All(h=>!h.CanReveal && (h.Status=="Offline" || h.Status=="Removed")),"offline reveal disabled");
 Check(reopened.GetFileMetadata(id,all[0].RelativePath) is { CanReveal:false, Status:"Offline" } saved
     && saved.Bytes==fileDetails!.Bytes && saved.Created==fileDetails.Created,"file metadata remains available offline");
-Check(reopened.QueryPage("pr ne",new(Volume:id),0,256).Total==625,"rescan preserves unchanged short-prefix rows");
+Check(reopened.QueryPage("ne",new(Volume:id),0,256).Total==625,"rescan preserves unchanged short-prefix rows");
 var removedPath="Projects\\Reports\\Needle-0624.txt";
 var missing=reopened.GetFileMetadata(id,removedPath);
 Check(missing is {Status:"Removed", Removed:not null, CanReveal:false} && missing.LastSeen <= missing.Removed,
