@@ -184,7 +184,8 @@ sealed partial class InventoryWindow
                 return;
             }
             e.Item = CachedResult(e.ItemIndex) is { } hit
-                ? new ListViewItem([hit.Name, hit.FullPath, hit.Label, hit.Status, hit.LastSeen.ToString(),
+                ? new ListViewItem([hit.Name, hit.IsDirectory ? "" : Path.GetExtension(hit.Name),
+                    hit.FullPath, hit.Label, hit.Status, hit.LastSeen.ToString(),
                     hit.IsDirectory ? "" : hit.Bytes.ToString("N0"), hit.Modified.ToString(), hit.Matched])
                 : new ListViewItem("Item no longer available");
         };

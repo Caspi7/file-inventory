@@ -183,6 +183,7 @@ sealed partial class InventoryWindow : Form
         heartbeat.Tick += async (_, _) => await Poll();
 
         results.Columns.Add("Filename", 180);
+        results.Columns.Add("Extension", 90);
         results.Columns.Add("Full path", 320);
         results.Columns.Add("Volume", 100);
         results.Columns.Add("Status", 95);
