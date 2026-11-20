@@ -14,6 +14,9 @@ sealed partial class InventoryWindow
     CancellationTokenSource? queryCancellation;
     CancellationTokenSource pageCancellation = new();
     int activeRevision = -1;
+    IReadOnlyList<long>? activeMatches;
+    readonly ProgressBar searchProgress = new() { Width = 110, Height = 18, Visible = false,
+        Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 25, AccessibleName = "Search progress" };
     readonly ProgressBar scanBar = new() { Width = 250, Height = 20, MarqueeAnimationSpeed = 30,
         AccessibleName = "Scan progress" };
     readonly System.Windows.Forms.Timer scanUiTimer = new() { Interval = 500 };
@@ -65,13 +68,13 @@ sealed partial class InventoryWindow
         };
         scanUiTimer.Tick += (_, _) => UpdateScanDisplay();
         scanUiTimer.Start();
-        FormClosed += (_, _) => { scanUiTimer.Dispose(); queryCancellation?.Dispose(); pageCancellation.Dispose(); };
+        FormClosed += (_, _) => { scanUiTimer.Dispose(); pageCancellation.Dispose(); };
         var filters = Flow();
         filters.Padding = new Padding(4);
         filters.Controls.AddRange([query, status, LabelFor("Extension"), extension,
             LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"), through, includeRemoved]);
         var actions = Flow();
-        actions.Controls.AddRange([copy, reveal, candidates, state]);
+        actions.Controls.AddRange([copy, reveal, candidates, searchProgress, state]);
         var right = Stack(5);
         fileDetails.Controls.Add(fileDetailsText);
         right.Controls.Add(filters, 0, 0);
@@ -171,21 +174,19 @@ sealed partial class InventoryWindow
             await OpenTreeFile(branch);
         };
         browse.Click += async (_, _) => await OpenCurrentFolder();
-        results.VirtualMode = true;
-        results.Columns[0].Frozen = true;
-        results.CellValueNeeded += (_, e) =>
+        results.RetrieveVirtualItem += (_, e) =>
         {
-            int page = e.RowIndex / PageSize;
-            if (!pageCache.TryGetValue(page, out var rows)) { if (activeRevision == revision) _ = LoadResultPage(page); return; }
-            int row = e.RowIndex % PageSize;
-            if (row >= rows.Count) return;
-            var hit = rows[row];
-            e.Value = e.ColumnIndex switch
+            int page = e.ItemIndex / PageSize;
+            if (activeRevision != revision || !pageCache.ContainsKey(page))
             {
-                0 => hit.Name, 1 => hit.FullPath, 2 => hit.Label, 3 => hit.Status,
-                4 => hit.LastSeen, 5 => hit.IsDirectory ? null : hit.Bytes, 6 => hit.Modified, 7 => hit.Matched,
-                _ => null
-            };
+                _ = LoadResultPage(page);
+                e.Item = new ListViewItem("Loading…");
+                return;
+            }
+            e.Item = CachedResult(e.ItemIndex) is { } hit
+                ? new ListViewItem([hit.Name, hit.FullPath, hit.Label, hit.Status, hit.LastSeen.ToString(),
+                    hit.IsDirectory ? "" : hit.Bytes.ToString("N0"), hit.Modified.ToString(), hit.Matched])
+                : new ListViewItem("Item no longer available");
         };
         results.KeyDown += async (_, e) =>
         {
@@ -277,7 +278,8 @@ sealed partial class InventoryWindow
 
     Task LoadResultPage(int page)
     {
-        if (closing || activeRevision != revision) return Task.CompletedTask;
+        if (closing || activeRevision != revision || pageCache.ContainsKey(page)
+            || page * PageSize >= results.VirtualListSize) return Task.CompletedTask;
         if (pendingPages.TryGetValue(page, out var pending)) return pending;
         var task = LoadResultPageCore(page, pageGeneration, pageCancellation.Token);
         pendingPages[page] = task;
@@ -289,21 +291,24 @@ sealed partial class InventoryWindow
         string input = activeInput;
         var filters = activeFilters;
         var parent = activeParent;
+        var matches = activeMatches;
+        await Task.Yield();
         bool entered = false;
         try
         {
             await pageGate.WaitAsync(token);
             entered = true;
-            var result = await Task.Run(() => catalog.QueryPage(input, filters, page * PageSize, PageSize, parent, false, token), token);
+            int offset = page * PageSize;
+            var rows = await Task.Run(() => matches is null
+                ? catalog.QueryPage(input, filters, offset, PageSize, parent, false, token).Rows
+                : catalog.ReadSearchPage(input, matches, offset, PageSize, token), token);
             if (closing || token.IsCancellationRequested || generation != pageGeneration) return;
-            pageCache[page] = result.Rows;
+            pageCache[page] = rows;
             if (pageCache.Count > 24)
                 foreach (int old in pageCache.Keys.OrderByDescending(p => Math.Abs(p - page)).Take(pageCache.Count - 24).ToArray())
                     pageCache.Remove(old);
-            int first = Math.Max(page * PageSize, results.FirstDisplayedScrollingRowIndex);
-            int last = Math.Min(results.RowCount, Math.Min((page + 1) * PageSize,
-                Math.Max(0, results.FirstDisplayedScrollingRowIndex) + results.DisplayedRowCount(false) + 1));
-            for (int row = Math.Max(0, first); row < last; row++) results.InvalidateRow(row);
+            int end = offset + Math.Min(PageSize, results.VirtualListSize - offset) - 1;
+            if (end >= offset) results.RedrawItems(offset, end, invalidateOnly: true);
             ShowActions();
         }
         catch (Exception ex) { if (!closing && !token.IsCancellationRequested && generation == pageGeneration) state.Text = ex.Message; }
@@ -357,8 +362,10 @@ sealed partial class InventoryWindow
     {
         try
         {
-            if (results.CurrentCell is { } cell && CurrentHit() is null) await LoadResultPage(cell.RowIndex / PageSize);
-            if (CurrentHit() is not { } hit) return;
+            int index = SelectedResult;
+            int requested = revision;
+            if (index >= 0 && CurrentHit() is null) await LoadResultPage(index / PageSize);
+            if (requested != revision || index != SelectedResult || CurrentHit() is not { } hit) return;
             int navigation = ++navigationRevision;
             var root = tree.Nodes.Cast<TreeNode>().FirstOrDefault(n => n.Tag is Branch b && b.Volume == hit.Volume);
             if (root is null)

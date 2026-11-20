@@ -160,8 +160,24 @@ sealed partial class Catalog
                 && !attributes.HasFlag(FileAttributes.ReparsePoint), removed);
     }
 
+    public List<long> IndexSearch(string input, Filters filters, CancellationToken token)
+    {
+        var ids = new List<long>();
+        QueryPage(input, filters, 0, 0, includeCount: false, cancellationToken: token, index: ids);
+        return ids;
+    }
+
+    public List<Hit> ReadSearchPage(string input, IReadOnlyList<long> ids, int offset, int limit, CancellationToken token)
+    {
+        var pageIds = new long[Math.Min(limit, ids.Count - offset)];
+        for (int i = 0; i < pageIds.Length; i++) pageIds[i] = ids[offset + i];
+        return QueryPage(input, new Filters(), 0, limit, includeCount: false,
+            cancellationToken: token, pageIds: pageIds).Rows;
+    }
+
     public CatalogPage QueryPage(string input, Filters filters, int offset, int limit,
-        string? parent = null, bool includeCount = true, CancellationToken cancellationToken = default)
+        string? parent = null, bool includeCount = true, CancellationToken cancellationToken = default,
+        List<long>? index = null, long[]? pageIds = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         string query = Key(input.Trim().Replace('/', '\\').Replace("\0", ""));
@@ -184,6 +200,18 @@ sealed partial class Catalog
             ("extension", filters.Extension is null ? null : Key(filters.Extension.TrimStart('.'))),
             ("min", filters.Min), ("max", filters.Max), ("modifiedFrom", filters.From),
             ("modifiedThrough", filters.Through), ("online", filters.Online) };
+        if (pageIds is not null)
+        {
+            // Preserve positions if a scan removes or replaces a row after the search.
+            var rowsByPosition = Read("""
+                SELECT f.name,f.rel,v.mount,f.volume,v.label,v.online,f.stale,f.seen,f.bytes,f.modified,
+                       f.attributes,0,0,f.removed
+                FROM json_each($ids) i LEFT JOIN files f ON f.id=i.value LEFT JOIN volumes v ON v.id=f.volume
+                ORDER BY i.key;
+                """, ("ids", JsonSerializer.Serialize(pageIds)));
+            return new(-1, rowsByPosition);
+        }
+
         var sql = query.Length > 0 ? search : """
             SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,3,0,removed
             FROM files f JOIN volumes v ON v.id=f.volume
@@ -205,6 +233,8 @@ sealed partial class Catalog
                 ? "WITH candidates AS (SELECT rowid AS id FROM fragments WHERE fragments MATCH $match)"
                 : "WITH candidates AS (SELECT file_id AS id FROM prefixes WHERE token=$firstShort)";
             sql = candidates + sql[ranked..];
+            sql = sql.Replace("FROM candidates c JOIN files f", "FROM candidates c CROSS JOIN files f",
+                StringComparison.Ordinal);
         }
         sql = sql.Replace("WHERE ($volume IS NULL OR f.volume=$volume)",
             "WHERE ($volume IS NULL OR f.volume=$volume)" +
@@ -223,6 +253,22 @@ sealed partial class Catalog
             sql = sql.Replace(optional, enabled ? predicate : "1", StringComparison.Ordinal);
         args = [.. args, ("parent", parent is null ? null : Key(parent)),
             ("limit", limit), ("offset", offset), ("drives", JsonSerializer.Serialize(filters.Drives))];
+        if (index is not null)
+        {
+            int projection = sql.LastIndexOf("SELECT ", StringComparison.Ordinal);
+            int fromClause = sql.IndexOf("FROM ", projection, StringComparison.Ordinal);
+            string orderedIds = sql[..projection] + (query.Length > 0 ? "SELECT id " : "SELECT f.id ") + sql[fromClause..sql.LastIndexOf("LIMIT", StringComparison.Ordinal)];
+            using var command = Command(db, orderedIds, args);
+            cancellationToken.ThrowIfCancellationRequested();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                index.Add(reader.GetInt64(0));
+            }
+            return new(index.Count, []);
+        }
+
         int total = -1;
         if (includeCount)
         {
@@ -243,6 +289,7 @@ sealed partial class Catalog
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (reader.IsDBNull(0)) { rows.Add(null!); continue; }
                 var name = reader.GetString(0);
                 var rel = reader.GetString(1);
                 var online = reader.GetBoolean(5);
