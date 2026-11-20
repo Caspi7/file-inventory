@@ -1,0 +1,13 @@
+SQLite 3.53.1. 1,000,004 records loaded in 173.36s. Catalog 811.8 MiB.
+'reflectie.docx': 1 results, median 1.71 ms, p95 2.30 ms
+'flectie': 3 results, median 1.35 ms, p95 2.16 ms
+'klm hangar reflectie': 2 results, median 1.79 ms, p95 2.84 ms
+'kl re': 2 results, median 0.03 ms, p95 0.10 ms
+'café (q4)': 1 results, median 0.37 ms, p95 0.52 ms
+'it': 50 results, median 0.09 ms, p95 0.14 ms
+'item': 50 results, median 0.08 ms, p95 0.23 ms
+'tem-': 50 results, median 0.26 ms, p95 0.58 ms
+'section': 50 results, median 0.68 ms, p95 1.30 ms
+'hangar': 2 results, median 0.69 ms, p95 1.25 ms
+'section item': 50 results, median 0.83 ms, p95 1.30 ms
+Fresh connection first query: 3.42 ms (OS cache warm).

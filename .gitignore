@@ -1,0 +1,11 @@
+bin/
+obj/
+publish/
+installer/output/
+.vs/
+__pycache__/
+*.user
+*.suo
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
