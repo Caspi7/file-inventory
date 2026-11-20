@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="File Inventory archive and magnifier">
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="#10334c"/>
+  <path d="M49 74a13 13 0 0 1 13-13h51l18 19h63a13 13 0 0 1 13 13v94a12 12 0 0 1-12 12H61a12 12 0 0 1-12-12z" fill="#5fc4e9"/>
+  <rect x="39" y="96" width="178" height="43" rx="13" fill="#e6f7ff"/>
+  <path d="M72 118h45" fill="none" stroke="#256287" stroke-width="12" stroke-linecap="round"/>
+  <path d="m181 184 25 25" fill="none" stroke="#10334c" stroke-width="25" stroke-linecap="round"/>
+  <path d="m181 184 25 25" fill="none" stroke="#ffd373" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="162" cy="163" r="34" fill="#10334c" stroke="#10334c" stroke-width="14"/>
+  <circle cx="162" cy="163" r="27" fill="none" stroke="#ffd373" stroke-width="13"/>
+</svg>

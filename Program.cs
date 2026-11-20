@@ -84,7 +84,8 @@ sealed partial class InventoryWindow : Form
     };
     readonly System.Windows.Forms.Timer heartbeat = new() { Interval = 15000 };
     readonly System.Windows.Forms.Timer debounce = new() { Interval = 120 };
-    readonly NotifyIcon tray = new() { Icon = SystemIcons.Application, Text = "File Inventory" };
+    readonly Icon appIcon = LoadAppIcon();
+    readonly NotifyIcon tray = new() { Text = "File Inventory" };
     readonly Dictionary<string, (CancellationTokenSource Cancellation, Task Work)> running = new();
     readonly Dictionary<string, ScanProgress> progress = new();
     List<Volume> volumes = [];
@@ -103,6 +104,8 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         scanner = new(catalog);
         Text = benchmark ? "File Inventory · Benchmark" : "File Inventory";
+        Icon = appIcon;
+        tray.Icon = appIcon;
         Width = 1370;
         Height = 830;
         MinimumSize = new(850, 630);
@@ -200,9 +203,17 @@ sealed partial class InventoryWindow : Form
             QueueSearch();
         };
         FormClosing += HandleClose;
-        FormClosed += (_, _) => { tray.Dispose(); debounce.Dispose(); heartbeat.Dispose(); };
+        FormClosed += (_, _) => { tray.Dispose(); appIcon.Dispose(); debounce.Dispose(); heartbeat.Dispose(); };
         ShowVolume();
         ShowActions();
+    }
+
+    static Icon LoadAppIcon()
+    {
+        using var artwork = typeof(InventoryWindow).Assembly.GetManifestResourceStream("FileInventory.AppIcon.ico");
+        if (artwork is null) return (Icon)SystemIcons.Application.Clone();
+        using var icon = new Icon(artwork);
+        return (Icon)icon.Clone();
     }
 
     static Label LabelFor(string text) => new() { Text = text, AutoSize = true, Margin = new(4, 7, 4, 4) };

@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.2.0"
+  #define BuildVersion "1.2.1"
 #endif
 
 [Setup]
@@ -27,6 +27,7 @@ OutputBaseFilename=FileInventory_Setup_x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\Assets\FileInventory.ico
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\FileInventory.exe
