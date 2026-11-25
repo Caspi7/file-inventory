@@ -1,8 +1,8 @@
 import { ListView } from "std-widgets.slint";
 import { Palette } from "theme.slint";
 
-export struct DataRow { a: string, b: string, c: string, d: string, e: string, f: string, g: string }
-export struct TreeRow { title: string, depth: int, marker: string }
+export struct DataRow { a: string, b: string, c: string, d: string, e: string, f: string, g: string, icon-kind: string, status-tone: string }
+export struct TreeRow { title: string, depth: int, marker: string, kind: string }
 export struct Tile { x: float, y: float, w: float, h: float, label: string, detail: string, tint: color }
 
 export component Label inherits Text {
@@ -10,9 +10,55 @@ export component Label inherits Text {
     vertical-alignment: center;
     overflow: elide;
 }
+export component ItemIcon inherits Path {
+    in property <string> kind;
+    property <bool> folder: kind == "folder";
+    property <bool> drive: kind == "drive-online" || kind == "drive-offline" || kind == "drive-imported";
+    width: 13px; height: 13px;
+    viewbox-width: 16; viewbox-height: 16;
+    commands: folder ? "M1 4Q1 3 2 3H6L8 5H14Q15 5 15 6V13Q15 14 14 14H2Q1 14 1 13Z"
+        : drive ? "M3 5H13L15 10V13H1V10Z M1 10H15 M11 11.5H13"
+        : "M4 2H9L12 5V14H4Z M9 2V5H12";
+    stroke-width: folder ? 1px : 1.4px;
+    fill: folder ? Palette.folder : transparent;
+    stroke: folder ? Palette.folder-stroke
+        : kind == "drive-online" ? Palette.drive : kind == "drive-offline" ? Palette.warning
+        : kind == "drive-imported" || kind == "code" ? Palette.imported
+        : kind == "pdf" ? Palette.danger : kind == "sheet" ? Palette.success
+        : kind == "doc" ? Palette.accent : kind == "media" ? Palette.warning
+        : kind == "archive" ? Palette.teal : Palette.muted;
+}
+
+export component SemanticPill inherits Rectangle {
+    in property <string> text;
+    in property <string> tone;
+    in property <bool> dot;
+    in property <length> max-pill-width: 166px;
+    property <color> ink: tone == "success" ? Palette.success : tone == "warning" ? Palette.warning
+        : tone == "danger" ? Palette.danger : Palette.imported;
+    width: min(pill-text.preferred-width + (dot ? 29px : 16px), max-pill-width);
+    height: 22px;
+    border-radius: self.height / 2;
+    background: tone == "success" ? Palette.success-bg : tone == "warning" ? Palette.warning-bg
+        : tone == "danger" ? Palette.danger-bg : Palette.imported-bg;
+    if root.dot : Rectangle {
+        x: 8px; y: (parent.height - self.height) / 2;
+        width: 6px; height: 6px; border-radius: 3px; background: root.ink;
+    }
+    pill-text := Label {
+        x: root.dot ? 21px : 8px; width: parent.width - self.x - 8px;
+        height: parent.height; text: root.text; color: root.ink; horizontal-alignment: center;
+    }
+}
+
 export component Action inherits Rectangle {
     in property <string> label;
     in property <string> icon;
+    in property <color> icon-tint: transparent;
+    in property <string> tone: "";
+    property <color> tone-ink: tone == "danger" ? Palette.danger : tone == "success" ? Palette.success
+        : tone == "warning" ? Palette.warning : tone == "accent" ? Palette.accent : transparent;
+    property <bool> toned: enabled && !primary && tone-ink != transparent;
     in property <bool> primary;
     in property <bool> tab;
     in property <bool> enabled: true;
@@ -21,12 +67,14 @@ export component Action inherits Rectangle {
     min-width: line.preferred-width;
     height: tab ? 36px : 30px;
     border-width: 1px;
-    border-color: primary && enabled ? Palette.accent : keyboard.has-focus ? Palette.accent : Palette.border;
+    border-color: primary && enabled ? Palette.accent : keyboard.has-focus ? Palette.accent : toned ? tone-ink : Palette.border;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom-left-radius: tab ? 0px : 6px;
     border-bottom-right-radius: tab ? 0px : 6px;
     background: primary && enabled ? (pointer.pressed ? Palette.accent-pressed : pointer.has-hover ? Palette.accent-hover : Palette.accent)
+        : toned && pointer.has-hover && tone != "accent"
+            ? (tone == "danger" ? Palette.danger-bg : tone == "success" ? Palette.success-bg : Palette.warning-bg)
         : enabled && pointer.pressed ? Palette.surface-pressed : enabled && pointer.has-hover ? Palette.surface-hover : Palette.surface;
     line := HorizontalLayout {
         padding-left: 9px;
@@ -36,13 +84,14 @@ export component Action inherits Rectangle {
             width: 14px; height: 14px; y: (parent.height - self.height) / 2;
             viewbox-width: 16; viewbox-height: 16;
             commands: root.icon;
-            stroke: root.primary && root.enabled ? white : root.enabled ? Palette.fg : Palette.disabled-fg;
+            stroke: root.primary && root.enabled ? white : !root.enabled ? Palette.disabled-fg : root.toned ? root.tone-ink
+                : root.icon-tint != transparent ? root.icon-tint : Palette.fg;
             stroke-width: 1.35px;
             fill: transparent;
         }
         if root.label != "" : Label {
             text: root.label;
-            color: root.primary && root.enabled ? white : root.enabled ? Palette.fg : Palette.disabled-fg;
+            color: root.primary && root.enabled ? white : !root.enabled ? Palette.disabled-fg : root.toned && root.icon == "" ? root.tone-ink : Palette.fg;
             horizontal-alignment: center;
         }
     }
@@ -76,6 +125,7 @@ component Cells inherits HorizontalLayout {
     in property <string> column-mode;
     in property <color> ink: Palette.fg;
     in property <bool> header;
+    in property <bool> selected;
     in property <int> sort-column;
     in property <bool> sort-ascending;
     callback sort(int);
@@ -85,11 +135,11 @@ component Cells inherits HorizontalLayout {
         : deep ? [headers.a, headers.b, headers.c, headers.d, headers.e]
         : headers.d != "" ? [headers.a, headers.b, headers.c, headers.d] : [headers.a, headers.b, headers.c];
     property <[string]> values: [cells.a, cells.b, cells.c, cells.d, cells.e, cells.f, cells.g];
-    property <[length]> widths: main ? [200px, 64px, 140px, 145px, 72px, 86px, 132px]
+    property <[length]> widths: main ? [200px, 64px, 140px, 145px, 94px, 86px, 132px]
         : deep ? [210px, 155px, 180px, 86px, 132px, 0px, 0px]
         : [150px, 110px, 100px, 100px, 128px, 0px, 0px];
     padding-left: 8px; padding-right: 22px; spacing: 8px;
-    for title[i] in root.titles : Rectangle {
+    for title[i] in root.titles : cell := Rectangle {
         clip: true;
         min-width: root.widths[i];
         max-width: i == 2 ? 10000px : root.widths[i];
@@ -97,8 +147,18 @@ component Cells inherits HorizontalLayout {
         horizontal-stretch: i == 2 ? 1 : 0;
         property <bool> sortable: root.header && (root.main || root.deep);
         background: sortable && sort-hit.has-hover ? Palette.surface-hover : transparent;
-        Label {
-            width: parent.width; height: parent.height;
+        property <bool> show-icon: !root.header && i == 0 && root.cells.icon-kind != "";
+        property <bool> show-status: !root.header && !root.selected && root.cells.status-tone != ""
+            && ((root.main && i == 4) || (root.column-mode == "changes" && i == 0));
+        if cell.show-icon : ItemIcon {
+            x: 0px; y: (parent.height - self.height) / 2; kind: root.cells.icon-kind;
+        }
+        if cell.show-status : SemanticPill {
+            x: 0px; y: (parent.height - self.height) / 2;
+            text: root.values[i]; tone: root.cells.status-tone; max-pill-width: parent.width;
+        }
+        if !cell.show-status : Label {
+            x: cell.show-icon ? 19px : 0px; width: parent.width - self.x; height: parent.height;
             text: root.header ? title + (root.sort-column == i ? (root.sort-ascending ? " ▲" : " ▼") : "") : root.values[i];
             color: root.ink;
             wrap: no-wrap; overflow: elide; vertical-alignment: center;
@@ -122,7 +182,7 @@ export component Grid inherits VerticalLayout {
     callback sort(int);
     callback selected(int);
     callback activated(int);
-    property <length> table-width: max(items.visible-width, column-mode == "main" ? 917px : column-mode == "deep" ? 825px : headers.d != "" ? 514px : 406px);
+    property <length> table-width: max(items.visible-width, column-mode == "main" ? 939px : column-mode == "deep" ? 825px : headers.d != "" ? 514px : 406px);
     Rectangle {
         height: 29px; background: Palette.header-bg; clip: true;
         Cells {
@@ -137,8 +197,8 @@ export component Grid inherits VerticalLayout {
         content-width: root.table-width;
         for row[i] in root.rows : Rectangle {
             width: root.table-width; height: 29px; clip: true;
-            background: i == root.selection ? Palette.accent : hit.has-hover ? Palette.surface-hover : mod(i, 2) == 0 ? Palette.surface : Palette.surface-alt;
-            Cells { cells: row; headers: root.headers; column-mode: root.column-mode; ink: i == root.selection ? white : Palette.fg; }
+            background: i == root.selection ? Palette.accent-pressed : hit.has-hover ? Palette.surface-hover : mod(i, 2) == 0 ? Palette.surface : Palette.surface-alt;
+            Cells { cells: row; headers: root.headers; column-mode: root.column-mode; selected: i == root.selection; ink: i == root.selection ? white : Palette.fg; }
             hit := TouchArea {
                 mouse-cursor: pointer;
                 clicked => { root.selection = i; root.selected(i); }
