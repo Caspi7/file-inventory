@@ -6,7 +6,7 @@ import { Palette, ThemeMode } from "theme.slint";
 export { Palette, ThemeMode }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.5.0";
+    title: "File Inventory 1.5.1";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -78,6 +78,10 @@ export component AppWindow inherits Window {
     in-out property <bool> excerpts: true;
     in-out property <bool> skip-system: true;
     in-out property <int> deep-selection: -1;
+    in-out property <int> file-sort-column: -1;
+    in-out property <bool> file-sort-ascending: true;
+    in-out property <int> deep-sort-column: -1;
+    in-out property <bool> deep-sort-ascending: true;
     callback action(string, int);
     init => { WidgetPalette.color-scheme = Palette.dark ? ColorScheme.dark : ColorScheme.light; }
     forward-focus: shortcuts;
@@ -130,7 +134,7 @@ export component AppWindow inherits Window {
                                 background: i == root.tree-selection ? Palette.accent : tree-hit.has-hover ? Palette.surface-hover : Palette.surface;
                                 Label { x: row.depth * 15px + 7px; width: 18px; text: row.marker; color: i == root.tree-selection ? white : Palette.muted; }
                                 Label { x: row.depth * 15px + 27px; width: parent.width - self.x - 4px; text: row.title; color: i == root.tree-selection ? white : Palette.fg; }
-                                tree-hit := TouchArea { clicked => { root.action(self.mouse-x < row.depth * 15px + 26px ? "tree-toggle" : "tree-select", i); } }
+                                tree-hit := TouchArea { mouse-cursor: pointer; clicked => { root.action(self.mouse-x < row.depth * 15px + 26px ? "tree-toggle" : "tree-select", i); } }
                             }
                         }
                         CheckBox { text: "Schedule refresh"; checked <=> root.schedule; enabled: root.has-volume; }
@@ -168,7 +172,9 @@ export component AppWindow inherits Window {
                         }
                         Grid {
                             vertical-stretch: 1; rows: root.rows; selection <=> root.selection;
-                            headers: { a: "Filename", b: "Extension", c: "Full path", d: "Volume", e: "Status", f: "Size", g: "Modified" };
+                            headers: { a: "Filename", b: "Ext", c: "Full path", d: "Volume", e: "Status", f: "Size", g: "Modified" };
+                            sort-column: root.file-sort-column; sort-ascending: root.file-sort-ascending;
+                            sort(i) => { root.action("file-sort", i); }
                             selected(i) => { root.action("file-select", i); }
                             activated(i) => { root.action("file-open", i); }
                         }
@@ -200,9 +206,10 @@ export component AppWindow inherits Window {
             background: root.overlay == "more" || root.overlay == "scope" ? transparent : #0008;
             TouchArea { clicked => { if root.overlay == "more" || root.overlay == "scope" { root.action("close", 0); } } }
             modal := Rectangle {
+                TouchArea {}
                 property <bool> small: root.overlay == "sync-settings" || root.overlay == "save-search" || root.overlay == "export" || root.overlay == "remove" || root.overlay == "import-password";
-                width: root.overlay == "more" || root.overlay == "scope" ? 335px : min(parent.width - 36px, root.overlay == "deep" ? 1140px : small ? 650px : 940px);
-                height: root.overlay == "more" ? 255px : root.overlay == "scope" ? min(parent.height - 58px, 360px) : small ? min(parent.height - 36px, root.overlay == "sync-settings" ? 400px : 205px) : min(parent.height - 36px, 680px);
+                width: root.overlay == "scope" ? min(parent.width - 20px, 410px) : root.overlay == "more" ? 335px : min(parent.width - 36px, root.overlay == "deep" ? 1140px : small ? 650px : 940px);
+                height: root.overlay == "more" ? 255px : root.overlay == "scope" ? min(parent.height - 58px, 440px) : small ? min(parent.height - 36px, root.overlay == "sync-settings" ? 400px : 205px) : min(parent.height - 36px, 680px);
                 x: root.overlay == "more" ? parent.width - self.width - 10px : root.overlay == "scope" ? 10px : (parent.width - self.width) / 2; y: root.overlay == "more" || root.overlay == "scope" ? 46px : (parent.height - self.height) / 2;
                 background: Palette.surface; border-radius: 9px; border-width: 1px; border-color: Palette.border-strong;
                 VerticalLayout {
@@ -238,6 +245,8 @@ export component AppWindow inherits Window {
                         excerpts <=> root.excerpts;
                         skip-system <=> root.skip-system;
                         selection <=> root.deep-selection;
+                        sort-column: root.deep-sort-column; sort-ascending: root.deep-sort-ascending;
+                        sort(i) => { root.action("deep-sort", i); }
                         action(name) => { root.action(name, 0); }
                     }
                     if root.overlay != "deep" : DialogBody {
