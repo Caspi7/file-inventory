@@ -1,4 +1,4 @@
-use std::{path::PathBuf,sync::{Arc,atomic::AtomicBool},time::Instant};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::{Arc,atomic::AtomicBool}, time::Instant};
 use file_inventory::{EngineResult,catalog::{Catalog,Volume},scanner,util};
 
 mod treemap;
@@ -30,9 +30,9 @@ fn main() -> EngineResult<()> {
         util::data_dir()
     };
     let catalog = Catalog::new(data_dir);
-    let _session = catalog.start_session()?;
+    let session = Rc::new(RefCell::new(Some(catalog.start_session()?)));
     let app=AppWindow::new()?;
-    ui_state::bind(&app, catalog);
+    ui_state::bind(&app, catalog, session);
     let weak = app.as_weak();
     slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
         if let Some(app) = weak.upgrade() {
