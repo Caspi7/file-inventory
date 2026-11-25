@@ -7,6 +7,12 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.7
+        • Smaller installer via LZMA2 Ultra64 solid compression and stripped debug symbols.
+        • Smaller .fiinventory Cloud Sync and export archives using Brotli compression with full backward compatibility for legacy GZip snapshots.
+        • Smaller, faster SQLite catalog via incremental auto-vacuum and PRAGMA optimize.
+        • Deduplicated and streamlined codebase.
+
         File Inventory 1.3.6
         • Fixed SQLite Error 5 ('database is locked') during Cloud Sync by pausing background drive polling while syncing/importing and increasing SQLite busy_timeout to 30s.
         • Sync button now stays clickable as "Cancel sync" while syncing instead of locking out.
