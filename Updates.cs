@@ -7,6 +7,12 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.0
+        • Open Deep Search with Ctrl+Shift+F to search inside TXT and code files, DOCX, XLSX, PPTX, ODT, and PDF.
+        • Background Content Scanning offers Eco, Balanced, and Turbo resource modes. The pre-scan estimator shows eligible and indexed files, pending work, source size, and estimated index size.
+        • Contentless FTS5 powers full-text search, with optional Brotli-compressed excerpts available when drives are offline.
+        • Sync content from Deep Search, include it in regular Cloud Sync by opting in, or export and import .ficontent archives.
+
         File Inventory 1.3.7
         • Smaller installer via LZMA2 Ultra64 solid compression and stripped debug symbols.
         • Smaller .fiinventory Cloud Sync and export archives using Brotli compression with full backward compatibility for legacy GZip snapshots.
