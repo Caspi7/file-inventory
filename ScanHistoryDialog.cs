@@ -8,11 +8,11 @@ sealed class ScanHistoryDialog : Form
     readonly ComboBox volumeSelector = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
     readonly ComboBox kindFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     readonly TextBox search = new() { PlaceholderText = "Search paths", Width = 260 };
-    readonly Button copy = new() { Text = "Copy Path", AutoSize = true };
-    readonly Button reveal = new() { Text = "Reveal in Explorer", AutoSize = true };
-    readonly ListView scans = CreateList(("Date", 185), ("Outcome", 145), ("+Added", 85), ("~Modified", 95),
+    readonly Button copy = UiHelpers.IconButton("Copy Path", FluentIcon.Copy);
+    readonly Button reveal = UiHelpers.IconButton("Reveal in Explorer", FluentIcon.FolderOpen);
+    readonly ListView scans = UiHelpers.DetailsList(("Date", 185), ("Outcome", 145), ("+Added", 85), ("~Modified", 95),
         ("-Removed", 95), ("Moved", 80), ("Net Delta", 145));
-    readonly ListView changes = CreateList(("Kind", 100), ("Path", 530), ("Old Bytes", 120), ("New Bytes", 120));
+    readonly ListView changes = UiHelpers.DetailsList(("Kind", 100), ("Path", 530), ("Old Bytes", 120), ("New Bytes", 120));
     List<Volume> volumes = [];
     List<ScanChange> scanChanges = [];
     bool updatingScans;
@@ -21,17 +21,15 @@ sealed class ScanHistoryDialog : Form
     {
         this.catalog = catalog;
         Text = "Scan History";
-        Theme.SetIcon(copy, FluentIcon.Copy);
-        Theme.SetIcon(reveal, FluentIcon.FolderOpen);
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(970, 590);
         MinimumSize = new Size(620, 420);
 
         var volumeLabel = new Label { Text = "Volume", AutoSize = true, Margin = new Padding(0, 7, 4, 0) };
         var kindLabel = new Label { Text = "Change kind", AutoSize = true, Margin = new Padding(0, 7, 4, 0) };
-        var volumeRow = CreateRow(volumeLabel, volumeSelector);
-        var filterRow = CreateRow(kindLabel, kindFilter, search);
-        var actionRow = CreateRow(copy, reveal);
+        var volumeRow = UiHelpers.FlowRow(volumeLabel, volumeSelector);
+        var filterRow = UiHelpers.FlowRow(kindLabel, kindFilter, search);
+        var actionRow = UiHelpers.FlowRow(copy, reveal);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(12) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
@@ -80,21 +78,6 @@ sealed class ScanHistoryDialog : Form
             catch (Exception ex) { ShowError(ex.Message); }
         };
         UpdateActions();
-    }
-
-    static FlowLayoutPanel CreateRow(params Control[] controls)
-    {
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        row.Controls.AddRange(controls);
-        return row;
-    }
-
-    static ListView CreateList(params (string Name, int Width)[] columns)
-    {
-        var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
-            HideSelection = false, MultiSelect = false };
-        foreach (var (name, width) in columns) list.Columns.Add(name, width);
-        return list;
     }
 
     Volume? SelectedVolume => volumeSelector.SelectedIndex >= 0 ? volumes[volumeSelector.SelectedIndex] : null;
