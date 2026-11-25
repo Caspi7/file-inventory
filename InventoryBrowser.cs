@@ -279,6 +279,14 @@ sealed partial class InventoryWindow
         return group;
     }
 
+    const string StorageMapCommand = "Storage Map (WinDirStat)…";
+
+    void ShowStorageMap()
+    {
+        using var dialog = new StorageMapDialog(catalog, currentTheme, selectedId);
+        dialog.ShowDialog(this);
+    }
+
     void InitializeMoreMenu()
     {
         var menu = new ContextMenuStrip();
@@ -294,14 +302,29 @@ sealed partial class InventoryWindow
             return item;
         }
 
+        var autoCheck = new ToolStripMenuItem("Auto-check for updates on startup")
+        {
+            CheckOnClick = true,
+            Checked = AutoCheckUpdates
+        };
+        menu.Opening += (_, _) => autoCheck.Checked = AutoCheckUpdates;
+        autoCheck.Click += (_, _) =>
+        {
+            SetAutoCheckUpdates(autoCheck.Checked);
+            autoCheck.Checked = AutoCheckUpdates;
+        };
+
         menu.Items.AddRange([
             AddCommand(browse),
             AddCommand(searchDrive),
+            new ToolStripMenuItem(StorageMapCommand, null, (_, _) => ShowStorageMap())
+                { ShortcutKeyDisplayString = "Ctrl+M" },
             new ToolStripSeparator(),
             AddCommand(syncSettingsButton),
             new ToolStripMenuItem("Command Palette (Ctrl+K)", null, (_, _) => ShowCommandPalette()),
             new ToolStripSeparator(),
             AddCommand(updateButton),
+            autoCheck,
             AddCommand(releaseNotesButton)
         ]);
         moreButton.Click += (_, _) => menu.Show(moreButton, new Point(0, moreButton.Height));
