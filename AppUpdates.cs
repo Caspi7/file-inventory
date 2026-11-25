@@ -52,7 +52,8 @@ static class AppUpdates
             string filename = $"FileInventory_Setup_x64_{version}.exe";
             foreach (var asset in release.GetProperty("assets").EnumerateArray())
             {
-                if (asset.GetProperty("name").GetString() != filename || asset.GetProperty("state").GetString() != "uploaded") continue;
+                var assetName = asset.GetProperty("name").GetString();
+                if ((assetName != filename && assetName != "FileInventory.exe") || asset.GetProperty("state").GetString() != "uploaded") continue;
                 long bytes = asset.GetProperty("size").GetInt64();
                 if (bytes is <= 0 or > MaximumInstallerBytes || !asset.TryGetProperty("digest", out var value)) continue;
                 string? digest = value.GetString();
