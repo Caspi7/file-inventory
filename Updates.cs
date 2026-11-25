@@ -5,11 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.12\n\n" +
-        "• Full Fluent / Windows 11 UI overhaul: Segoe UI Variable typography, homogeneous rounded buttons, custom-painted Dark Mode for ListView headers (SysHeader32), ComboBox, DateTimePicker, ProgressBar, NumericUpDown, and dialogs.\n" +
-        "• Faster catalog indexing & queries: ordered prefix B-tree publishing, 64–128 MiB SQLite cache, 256 MiB memory-mapped reads, and WAL synchronous=NORMAL.\n" +
-        "• Hybrid installer: checks GitHub for newer versions on startup (with offline fallback) and lets you choose the install folder.\n" +
-        "• Accept & Install Now dialog with release notes in the in-app updater.";
+        "File Inventory 1.2.13\n\n" +
+        "• Single-pass NTFS directory enumeration (NtQueryDirectoryFile + FileIdExtdDirectoryInformation) — eliminates per-file handle opens.\n" +
+        "• Multi-threaded producer/consumer scanner pipeline (2–8 parallel workers + dedicated SQLite writer via Channels).\n" +
+        "• Full Fluent / Windows 11 UI overhaul with Dark/Light mode and hybrid online/offline installer.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
