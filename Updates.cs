@@ -5,6 +5,18 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.0
+        • Command Palette (Ctrl+K) and global shortcuts.
+        • Structured query syntax, saved searches, and inline match highlighting.
+        • Recursive folder size rollups.
+        • Cross-drive duplicate finder with on-demand SHA-256 verification.
+        • Scan diffs and “What Changed” history.
+        • Inline Quick Look previews and file tags and notes.
+        • Drive location notes and freshness alerts.
+        • Portable standalone HTML, CSV, and JSON reports.
+        • System theme automatically follows Windows.
+        • Hover information tooltips on all main-window controls.
+
         File Inventory 1.2.20
         • Fixed Cloud Sync auto-import: now automatically detects and imports .finv.gz, .finv.enc, and .fiinventory snapshots in the sync folder into Drive Library, and re-imports any drive missing from the local catalog.
 
