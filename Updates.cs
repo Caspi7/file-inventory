@@ -5,10 +5,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.8\n\n" +
-        "• Modern Win11/macOS-style UI with Light/Dark mode toggle and updated logo.\n" +
-        "• In-app and updater release notes.\n" +
-        "• Faster indexing, smaller SQLite catalog, and smaller single-file executable.";
+        "File Inventory 1.2.9\n\n" +
+        "• Improved Dark/Light mode styling across all controls (ComboBox, DateTimePicker, ListView, and buttons).\n" +
+        "• Modern Win11/macOS-style UI with updated logo and release notes.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
