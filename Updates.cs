@@ -5,6 +5,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.17
+        • Fixed background lingering process on close: bounded 3s scan shutdown timeout, clean Environment.Exit(0) on exit, and normal taskbar minimize instead of hiding invisibly to the system tray.
+
         File Inventory 1.2.16
         • Universal 1-Click Cloud Sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud Drive, or custom/Syncthing folders.
         • Optional Auto-sync after each drive scan and optional AES-256-GCM passphrase encryption for private cloud snapshots.
