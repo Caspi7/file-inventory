@@ -23,7 +23,7 @@ sealed record ContentScanEstimate(long EligibleFiles, long AlreadyIndexed, long 
     long TotalSourceBytes, long EstimatedIndexBytes);
 sealed record ContentScanProgress(long Processed, long Total, long Indexed, long Skipped,
     long Failed, string CurrentFile);
-sealed record ContentSearchHit(long FileId, string Volume, string Rel, string Name, string FullPath,
+public sealed record ContentSearchHit(long FileId, string Volume, string Rel, string Name, string FullPath,
     string VolumeLabel, bool Online, long Bytes, long Modified, string Snippet, double Rank);
 sealed record ContentIndexStats(long IndexedFiles, long TotalTextBytes, long DatabaseBytes);
 
@@ -35,7 +35,6 @@ sealed partial class ContentIndex(Catalog catalog)
     const int MaxArchiveField = 64 * 1024 * 1024;
     const string TextExtensions = "txt md json xml csv log cs py js ts jsx tsx html htm css ini cfg yaml yml sql ps1 bat sh toml c cpp h java rs go";
     const string OfficeExtensions = "docx xlsx pptx odt ods odp";
-    static readonly Regex Words = new(@"[\p{L}\p{M}\p{N}]+", RegexOptions.Compiled);
     readonly string database = Path.Combine(catalog.DataDirectory, "content.sqlite3");
 
     sealed record Source(long Id, string Volume, string Rel, string Mount, string Extension,
@@ -745,42 +744,301 @@ sealed partial class ContentIndex(Catalog catalog)
     }
 
     public static List<ContentSearchHit> Search(Catalog catalog, string query, string? volumeId = null,
-        string? extension = null, int limit = 100)
+        string? extension = null, int limit = 100) =>
+        SearchDetailed(catalog, query, volumeId, extension, limit).Hits;
+
+    public static ContentSearchResult SearchDetailed(Catalog catalog, string query, string? volumeId = null,
+        string? extension = null, int limit = 100, ContentSearchOptions? options = null)
     {
-        var hits = new List<ContentSearchHit>();
-        if (limit <= 0 || string.IsNullOrWhiteSpace(query)) return hits;
-        string[] terms = Words.Matches(query).Select(match => match.Value)
-            .Distinct(StringComparer.OrdinalIgnoreCase).Take(32).ToArray();
-        if (terms.Length == 0) return hits;
-        string match = string.Join(" AND ", terms.Select(term => "\"" + term + "\""));
+        options ??= new();
+        if (limit <= 0 || string.IsNullOrWhiteSpace(query)) return new([], "", [], false);
+        var (root, explicitSyntax) = ContentQuery.Parse(query, options.Mode);
+        if (root is null) return new([], "Enter a valid search with at least one positive term", [], false);
+        var positive = ContentQuery.PositiveTerms(root).Distinct().ToArray();
+        if (positive.Length == 0) return new([], "Enter at least one positive search term", [], false);
+        var concepts = options.Mode == ContentMatchMode.Smart && !explicitSyntax &&
+            positive.Sum(term => ContentQuery.Words.Matches(term.Text).Count) >= 2
+            ? positive.Where(term => term.Phrase || term.Prefix || !StopWords.Contains(term.Text))
+                .DistinctBy(term => (NormalizeSearchWord(term.Text), term.Prefix, term.Phrase)).ToArray()
+            : [];
+        int strictLimit = concepts.Length >= 3 ? Math.Max(limit, 3) : limit;
+
         using var db = new ContentIndex(catalog).Open();
         AttachCatalog(db, catalog);
-        using var cmd = Catalog.Command(db, """
+        var corrections = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        var hits = Read(root, strictLimit, relaxed: false);
+        if (options.FuzzyMatching)
+        {
+            bool vocabCreated = false;
+            var words = positive.Where(term => !term.Prefix && (!term.Phrase || hits.Count == 0))
+                .SelectMany(term => ContentQuery.Words.Matches(term.Text).Select(word => word.Value))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(32);
+            foreach (string word in words)
+            {
+                string normalized = NormalizeSearchWord(word);
+                if (normalized.Length is < 3 or > 64 || normalized.All(char.IsDigit)) continue;
+                using var probe = Catalog.Command(db, "SELECT 1 FROM content_fts WHERE content_fts MATCH $word LIMIT 1;",
+                    ("word", ContentQuery.Quote(word)));
+                if (probe.ExecuteScalar() is not null) continue;
+                if (!vocabCreated)
+                {
+                    Catalog.Execute(db, """
+                        CREATE VIRTUAL TABLE IF NOT EXISTS temp.content_vocab USING fts5vocab(main, content_fts, row);
+                        """);
+                    vocabCreated = true;
+                }
+                var candidates = FindSpellings(db, normalized);
+                if (candidates.Length > 0) corrections.Add(word, candidates);
+            }
+            if (corrections.Count > 0) hits = Read(root, strictLimit, relaxed: false);
+        }
+
+        bool usedRelaxed = false;
+        if (concepts.Length > 0 && (hits.Count == 0 || (hits.Count < 3 && concepts.Length >= 3)))
+        {
+            ContentQuery.Node relaxed = concepts.Cast<ContentQuery.Node>()
+                .Aggregate((left, right) => new ContentQuery.Join(left, right, Any: true));
+            foreach (var exclusion in ContentQuery.Conjuncts(root).OfType<ContentQuery.Exclude>())
+                relaxed = new ContentQuery.Join(relaxed, exclusion);
+            var closeHits = Read(relaxed, (int)Math.Clamp((long)limit * 3, 150, int.MaxValue), relaxed: true);
+            if (closeHits.Count > 0)
+            {
+                hits = closeHits;
+                usedRelaxed = true;
+            }
+        }
+        if (hits.Count > limit) hits.RemoveRange(limit, hits.Count - limit);
+        return new(hits, usedRelaxed ? "Close match (matched best keywords)" : "",
+            corrections.Select(pair => $"{pair.Key} → {pair.Value[0]}*").ToArray(), usedRelaxed);
+
+        string Render(ContentQuery.Term term, bool excluded)
+        {
+            string exact = ContentQuery.Quote(term.Text, term.Prefix);
+            if (excluded || term.Prefix || corrections.Count == 0) return exact;
+            if (!term.Phrase)
+                return corrections.TryGetValue(term.Text, out var alternatives)
+                    ? "(" + exact + " OR " + string.Join(" OR ", alternatives.Select(word => ContentQuery.Quote(word, true))) + ")"
+                    : exact;
+
+            string[] words = term.Text.Split(' ');
+            if (!words.Any(corrections.ContainsKey)) return exact;
+            // FTS5's + operator keeps each spelling alternative in the same phrase position.
+            IEnumerable<string> phrases = [""];
+            foreach (string word in words)
+            {
+                string token = ContentQuery.Quote(word);
+                var choices = corrections.TryGetValue(word, out var variants)
+                    ? variants.Select(value => ContentQuery.Quote(value, true)).Append(token)
+                    : [token];
+                phrases = phrases.SelectMany(phrase => choices.Select(choice =>
+                    phrase.Length == 0 ? choice : phrase + " + " + choice)).Take(32).ToArray();
+            }
+            return "(" + exact + " OR " + string.Join(" OR ", phrases) + ")";
+        }
+
+        List<ContentSearchHit> Read(ContentQuery.Node node, int fetch, bool relaxed)
+        {
+            var (match, complement) = ContentQuery.Compile(node, Render);
+            string predicate = complement
+                ? "content_fts.rowid NOT IN (SELECT rowid FROM content_fts WHERE content_fts MATCH $match)"
+                : "content_fts MATCH $match";
+            var terms = ContentQuery.PositiveTerms(node).Distinct().ToArray();
+            var variants = terms.Select(term => term.Text.Split(' ').SelectMany(word =>
+                corrections.TryGetValue(word, out var spellings) && !term.Prefix
+                    ? spellings.Select(value => (Text: value, Prefix: true)).Prepend((Text: word, Prefix: false))
+                    : [(Text: word, Prefix: term.Prefix)]).ToArray()).ToArray();
+            string[] snippetTerms = variants.SelectMany(values => values).Select(value => value.Text)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (relaxed)
+                variants = variants.Select(values => values.Select(value =>
+                    (Text: NormalizeSearchWord(value.Text), value.Prefix)).ToArray()).ToArray();
+            using var cmd = Catalog.Command(db, $"""
             SELECT f.id,f.volume,f.rel,f.name,v.mount,v.label,v.online,f.bytes,f.modified,c.brotli_text,
                 bm25(content_fts) AS rank
             FROM content_fts JOIN content_files c ON c.file_id=content_fts.rowid
             JOIN source_catalog.files f ON f.id=c.file_id AND f.volume=c.volume AND f.rel=c.rel
                 AND f.bytes=c.bytes AND f.modified=c.modified
             JOIN source_catalog.volumes v ON v.id=f.volume
-            WHERE content_fts MATCH $match AND f.removed IS NULL AND (f.attributes & 16)=0
+            WHERE {predicate} AND f.removed IS NULL AND (f.attributes & 16)=0
                 AND ($volume IS NULL OR f.volume=$volume) AND ($ext IS NULL OR f.extension=$ext)
             ORDER BY rank,f.id LIMIT $limit;
             """, ("match", match), ("volume", volumeId),
-            ("ext", extension is null ? null : Catalog.Key(extension.TrimStart('.'))), ("limit", limit));
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            string rel = reader.GetString(2);
-            string snippet = reader.IsDBNull(9) ? "" : MakeSnippet(Decompress((byte[])reader.GetValue(9)), terms);
-            hits.Add(new(reader.GetInt64(0), reader.GetString(1), rel, reader.GetString(3),
-                Path.Combine(reader.GetString(4), rel), reader.GetString(5), reader.GetBoolean(6),
-                reader.GetInt64(7), reader.GetInt64(8), snippet, reader.GetDouble(10)));
+                ("ext", extension is null ? null : Catalog.Key(extension.TrimStart('.'))), ("limit", fetch));
+            using var reader = cmd.ExecuteReader();
+            var ranked = new List<(ContentSearchHit Hit, int Coverage, int Filename)>();
+            while (reader.Read())
+            {
+                string rel = reader.GetString(2), name = reader.GetString(3);
+                string body = reader.IsDBNull(9) ? "" : Decompress((byte[])reader.GetValue(9));
+                var hit = new ContentSearchHit(reader.GetInt64(0), reader.GetString(1), rel, name,
+                    Path.Combine(reader.GetString(4), rel), reader.GetString(5), reader.GetBoolean(6),
+                    reader.GetInt64(7), reader.GetInt64(8), MakeSnippet(body, snippetTerms), reader.GetDouble(10));
+                if (!relaxed)
+                {
+                    ranked.Add((hit, 0, 0));
+                    continue;
+                }
+                var bodyWords = SearchWords(body);
+                var nameWords = SearchWords(name);
+                int coverage = 0, filename = 0;
+                foreach (var concept in variants)
+                {
+                    bool inName = MatchesConcept(nameWords, concept);
+                    if (inName) filename++;
+                    if (inName || MatchesConcept(bodyWords, concept)) coverage++;
+                }
+                ranked.Add((hit, coverage, filename));
+            }
+            return relaxed
+                ? ranked.OrderByDescending(row => row.Coverage).ThenByDescending(row => row.Filename)
+                    .ThenBy(row => row.Hit.Rank).Take(limit).Select(row => row.Hit).ToList()
+                : ranked.Select(row => row.Hit).ToList();
         }
-        return hits;
+    }
+
+    static readonly HashSet<string> StopWords = ("""
+        a an the and or of to in on for with about from by at as is are was were be been that this these those
+        it its my your our their file files document documents looking find something where what when how into
+        onto over under between through during before after above below up down out off all any both each few
+        more most other some such only own same so than too very can will just should now
+        """).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    static string NormalizeSearchWord(string value)
+    {
+        var normalized = new StringBuilder(value.Length);
+        foreach (var rune in value.Normalize(NormalizationForm.FormD).EnumerateRunes())
+            if (Rune.GetUnicodeCategory(rune) != UnicodeCategory.NonSpacingMark)
+                normalized.Append(Rune.ToLowerInvariant(rune));
+        return normalized.ToString();
+    }
+
+    static HashSet<string> SearchWords(string text) => ContentQuery.Words.Matches(text)
+        .Select(word => NormalizeSearchWord(word.Value)).ToHashSet(StringComparer.Ordinal);
+
+    static bool MatchesConcept(HashSet<string> words, (string Text, bool Prefix)[] variants) =>
+        variants.Any(variant => variant.Prefix
+            ? words.Any(word => word.StartsWith(variant.Text, StringComparison.Ordinal))
+            : words.Contains(variant.Text));
+
+    static string[] FindSpellings(SqliteConnection db, string word)
+    {
+        int maxDistance = word.Length <= 5 ? 1 : word.Length <= 10 ? 2 : 3;
+        string prefix = Prefix(word, 2);
+        bool canTranspose = prefix.Length == 2 && !char.IsSurrogate(prefix[0]) && !char.IsSurrogate(prefix[1]);
+        string swapped = canTranspose ? string.Concat(word[1], word[0]) : prefix;
+        string repaired = swapped + word[prefix.Length..];
+        string stem = word;
+        foreach (string suffix in new[] { "ing", "ed" })
+        {
+            if (word.Length < suffix.Length + 3 || !word.EndsWith(suffix, StringComparison.Ordinal)) continue;
+            stem = word[..^suffix.Length];
+            if (stem.Length > 3 && stem[^1] == stem[^2]) stem = stem[..^1];
+            break;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var close = new List<(string Term, int Distance, int PrefixLength, long Documents)>();
+        AddRange(prefix);
+        if (swapped != prefix) AddRange(swapped);
+        if (word.Length <= 5 || close.Count < 3) AddRange(Prefix(word, 1));
+        if (close.Count == 0 && canTranspose)
+        {
+            string tail = word[1..];
+            AddRange(Prefix(tail, 1));
+            // A wrong first letter leaves the next characters intact. Probe bounded ranges
+            // for those suffixes with each possible Latin initial.
+            if (close.Count == 0)
+                for (char initial = 'a'; initial <= 'z'; initial++)
+                    AddRange(initial + Prefix(tail, 2));
+        }
+
+        return close.OrderBy(hit => hit.Distance).ThenByDescending(hit => hit.PrefixLength)
+            .ThenByDescending(hit => hit.Documents).ThenBy(hit => hit.Term, StringComparer.Ordinal)
+            .Take(4).Select(hit => hit.Term).ToArray();
+
+        void AddRange(string start)
+        {
+            using var cmd = Catalog.Command(db, """
+                SELECT term, doc FROM temp.content_vocab WHERE term >= $a AND term < $b LIMIT 3000;
+                """, ("a", start), ("b", start + char.ConvertFromUtf32(0x10FFFF)));
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                string candidate = reader.GetString(0);
+                if (Math.Abs(candidate.Length - word.Length) > maxDistance + 1 &&
+                    Math.Abs(candidate.Length - stem.Length) > maxDistance) continue;
+                if (!seen.Add(candidate)) continue;
+
+                int distance = Score(word, candidate);
+                if (stem != word) distance = Math.Min(distance, Score(stem, candidate));
+                // An initial transposition can mask a second misspelling in the rest of the word.
+                if (distance > maxDistance && swapped != prefix && word.Length >= 6 &&
+                    candidate.StartsWith(swapped, StringComparison.Ordinal))
+                    distance = Score(repaired, candidate);
+                if (distance > maxDistance) continue;
+
+                int common = 0;
+                while (common < Math.Min(word.Length, candidate.Length) && word[common] == candidate[common]) common++;
+                close.Add((candidate, distance, common, reader.GetInt64(1)));
+            }
+        }
+
+        int Score(string typed, string candidate)
+        {
+            int distance = Distance(typed, candidate, maxDistance);
+            // Porter can remove a final e, as in invoice -> invoic.
+            if (distance > 1 && typed.EndsWith('e') && !candidate.EndsWith('e'))
+                distance = Math.Min(distance, Distance(typed, candidate + "e", maxDistance));
+            return distance;
+        }
+    }
+
+    static string Prefix(string word, int length) =>
+        word[..(char.IsHighSurrogate(word[length - 1]) ? length + 1 : length)];
+
+    static int Distance(string left, string right, int maximum)
+    {
+        if (Math.Abs(left.Length - right.Length) > maximum) return maximum + 1;
+        int columns = right.Length + 2, infinity = left.Length + right.Length;
+        Span<int> matrix = stackalloc int[(left.Length + 2) * columns];
+        Span<int> previousRows = stackalloc int[right.Length];
+        previousRows.Clear();
+        matrix[0] = infinity;
+        for (int i = 0; i <= left.Length; i++)
+        {
+            matrix[(i + 1) * columns] = infinity;
+            matrix[(i + 1) * columns + 1] = i;
+        }
+        for (int j = 0; j <= right.Length; j++)
+        {
+            matrix[j + 1] = infinity;
+            matrix[columns + j + 1] = j;
+        }
+        for (int i = 1; i <= left.Length; i++)
+        {
+            int previousColumn = 0;
+            for (int j = 1; j <= right.Length; j++)
+            {
+                int previousRow = previousRows[j - 1], transposedColumn = previousColumn;
+                int cost = left[i - 1] == right[j - 1] ? 0 : 1;
+                if (cost == 0)
+                {
+                    previousColumn = j;
+                    previousRows[j - 1] = i;
+                }
+                int index = (i + 1) * columns + j + 1;
+                matrix[index] = Math.Min(
+                    Math.Min(matrix[index - columns - 1] + cost, matrix[index - 1] + 1),
+                    Math.Min(matrix[index - columns] + 1,
+                        matrix[previousRow * columns + transposedColumn] + i - previousRow + j - transposedColumn - 1));
+            }
+        }
+        return matrix[^1];
     }
 
     static string MakeSnippet(string body, string[] terms)
     {
+        if (body.Length == 0) return "";
         const int width = 140;
         var compare = CultureInfo.InvariantCulture.CompareInfo;
         const CompareOptions flags = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
@@ -788,17 +1046,19 @@ sealed partial class ContentIndex(Catalog catalog)
         foreach (string term in terms)
         {
             int found = compare.IndexOf(body, term, flags);
-            if (found < 0)
-            {
-                // Porter matches can have different endings from the query.
-                for (int length = term.Length - 1; length >= Math.Max(3, term.Length - 4) && found < 0; length--)
-                {
-                    if (!char.IsHighSurrogate(term[length - 1]))
-                        found = compare.IndexOf(body, term[..length], flags);
-                }
-            }
             if (found >= 0) first = Math.Min(first, found);
         }
+        // Porter matches can have different endings from the query.
+        if (first == body.Length)
+            foreach (string term in terms)
+                for (int length = term.Length - 1; length >= Math.Max(3, term.Length - 4); length--)
+                {
+                    if (char.IsHighSurrogate(term[length - 1])) continue;
+                    int found = compare.IndexOf(body, term[..length], flags);
+                    if (found < 0) continue;
+                    first = Math.Min(first, found);
+                    break;
+                }
         int start = first == body.Length ? 0 : Math.Clamp(first - 45, 0, Math.Max(0, body.Length - width));
         int end = Math.Min(body.Length, start + width);
         if (start > 0 && char.IsLowSurrogate(body[start])) start--;
