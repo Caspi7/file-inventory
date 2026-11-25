@@ -17,7 +17,7 @@ enum ContentScanMode { Eco, Balanced, Turbo }
 sealed record ContentScanOptions(IReadOnlyList<string>? VolumeIds = null,
     ContentScanMode Mode = ContentScanMode.Eco, long MaxFileBytes = 25 * 1024 * 1024,
     int MaxTextChars = 131_072, bool StoreSnippets = true, bool IncludeText = true,
-    bool IncludeOffice = true, bool IncludePdf = true);
+    bool IncludeOffice = true, bool IncludePdf = true, bool SkipSystemFolders = true);
 
 sealed record ContentScanEstimate(long EligibleFiles, long AlreadyIndexed, long ToScan,
     long TotalSourceBytes, long EstimatedIndexBytes);
@@ -131,6 +131,23 @@ sealed partial class ContentIndex(Catalog catalog)
         _ => true
     };
 
+    static bool IsSystemOrNoisePath(string rel)
+    {
+        const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+        return rel.StartsWith(@"Windows\", comparison)
+            || rel.StartsWith(@"Program Files\", comparison)
+            || rel.StartsWith(@"Program Files (x86)\", comparison)
+            || rel.StartsWith(@"ProgramData\", comparison)
+            || rel.StartsWith(@"$Recycle.Bin\", comparison)
+            || rel.StartsWith(@"System Volume Information\", comparison)
+            || rel.Contains(@"\node_modules\", comparison)
+            || rel.Contains(@"\.git\", comparison)
+            || rel.Contains(@"\AppData\Local\Temp\", comparison)
+            || rel.Contains(@"\AppData\Local\Packages\", comparison)
+            || rel.Contains(@"\obj\", comparison)
+            || rel.Contains(@"\bin\", comparison);
+    }
+
     public static ContentScanEstimate EstimateScan(Catalog catalog, ContentScanOptions options)
     {
         using var db = new ContentIndex(catalog).Open();
@@ -139,6 +156,7 @@ sealed partial class ContentIndex(Catalog catalog)
         double estimate = 0;
         foreach (var source in Candidates(db, options))
         {
+            if (options.SkipSystemFolders && IsSystemOrNoisePath(source.Rel)) continue;
             eligible++;
             bytes += source.Bytes;
             if (source.Status == Indexed) indexed++;
@@ -174,13 +192,18 @@ sealed partial class ContentIndex(Catalog catalog)
                 using var db = index.Open();
                 AttachCatalog(db, catalog);
                 using var transaction = db.BeginTransaction(deferred: true);
-                foreach (var _ in Candidates(db, options))
+                foreach (var source in Candidates(db, options))
                 {
                     token.ThrowIfCancellationRequested();
+                    if (options.SkipSystemFolders && IsSystemOrNoisePath(source.Rel)) continue;
                     total++;
                 }
                 foreach (var source in Candidates(db, options))
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (options.SkipSystemFolders && IsSystemOrNoisePath(source.Rel)) continue;
                     await input.Writer.WriteAsync(source, token).ConfigureAwait(false);
+                }
             }
             finally { input.Writer.TryComplete(); }
         }));
