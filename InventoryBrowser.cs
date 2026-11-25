@@ -71,8 +71,8 @@ sealed partial class InventoryWindow
         location.UseMnemonic = false;
         Theme.MarkPrimaryLabel(location);
         details.Height = 140;
-        var toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1,
+        var toolbar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 48,
+            ColumnCount = 2, RowCount = 1,
             Padding = new Padding(10, 8, 10, 6), Margin = Padding.Empty };
         toolbar.ColumnStyles.Add(new(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -290,7 +290,7 @@ sealed partial class InventoryWindow
     static FlowLayoutPanel CommandGroup(AnchorStyles alignment, params Control[] controls)
     {
         var group = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = alignment == AnchorStyles.Left,
+            WrapContents = false,
             Anchor = alignment == AnchorStyles.Left ? AnchorStyles.Left | AnchorStyles.Right : alignment,
             Margin = Padding.Empty };
         foreach (var control in controls)
