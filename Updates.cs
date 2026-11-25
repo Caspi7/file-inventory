@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace FileInventory;
 
 sealed partial class InventoryWindow
@@ -5,6 +7,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.3
+        • Interactive Storage Map for online and offline drive inventories (Ctrl+M).
+        • Optional automatic update checks on startup.
+
         File Inventory 1.3.2
         • The single-row command bar keeps primary actions in view and groups additional commands under ⋯ More.
         • Inventory exports and Cloud Sync snapshots use readable filenames in the form <PC> - <Drive> (<Letter>). Sync snapshots also include a short drive ID.
@@ -102,10 +108,22 @@ sealed partial class InventoryWindow
     AppUpdates.Release? updateRelease;
     long updateBytes;
     CancellationTokenSource? updateCancellation;
+    CancellationTokenSource? startupUpdateCancellation;
+    sealed record UpdateSettings(bool AutoCheckUpdates = true);
+    string UpdateSettingsPath => Path.Combine(catalog.DataDirectory, "update_settings.json");
+    bool AutoCheckUpdates { get; set; } = true;
     public string? UpdateInstaller { get; private set; }
 
     void InitializeUpdates()
     {
+        try
+        {
+            if (File.Exists(UpdateSettingsPath))
+                AutoCheckUpdates = JsonSerializer.Deserialize<UpdateSettings>(File.ReadAllText(UpdateSettingsPath))
+                    ?.AutoCheckUpdates ?? true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+
         updateButton.Enabled = !benchmark;
         releaseNotesButton.Click += (_, _) => ShowReleaseNotesHistory();
         updateButton.Click += async (_, _) =>
@@ -115,7 +133,50 @@ sealed partial class InventoryWindow
         };
     }
 
-    async Task CheckForUpdates()
+    void SetAutoCheckUpdates(bool enabled)
+    {
+        try
+        {
+            string temporary = UpdateSettingsPath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new UpdateSettings(enabled)));
+            File.Move(temporary, UpdateSettingsPath, overwrite: true);
+            AutoCheckUpdates = enabled;
+            if (!enabled) startupUpdateCancellation?.Cancel();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "Update settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    async Task CheckForUpdatesSilentAsync()
+    {
+        if (!AutoCheckUpdates || benchmark || closing || checkingUpdates) return;
+        using var cancellation = new CancellationTokenSource();
+        startupUpdateCancellation = cancellation;
+        AppUpdates.Release? release;
+        try
+        {
+            cancellation.CancelAfter(TimeSpan.FromSeconds(20));
+            release = await AppUpdates.FindUpdate(AppUpdates.CurrentVersion, cancellation.Token);
+            if (release is null) return;
+            cancellation.CancelAfter(Timeout.InfiniteTimeSpan);
+            while (running.Count != 0 || transferringInventory)
+                await Task.Delay(500, cancellation.Token);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+        finally
+        {
+            startupUpdateCancellation = null;
+        }
+        if (release is not null && !cancellation.IsCancellationRequested && AutoCheckUpdates && !closing)
+            await CheckForUpdates(release);
+    }
+
+    async Task CheckForUpdates(AppUpdates.Release? knownRelease = null)
     {
         if (checkingUpdates || closing) return;
         if (running.Count != 0 || transferringInventory)
@@ -123,24 +184,27 @@ sealed partial class InventoryWindow
             MessageBox.Show(this, "Wait for the current scan or inventory transfer to finish, then try again.", "File Inventory update");
             return;
         }
+        startupUpdateCancellation?.Cancel();
         checkingUpdates = true;
-        updateButton.Text = "Cancel update check";
-        UpdateScanDisplay();
+        if (knownRelease is null)
+        {
+            updateButton.Text = "Cancel update check";
+            UpdateScanDisplay();
+        }
         string? download = null;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             updateCancellation = timeout;
-            var release = await AppUpdates.FindUpdate(AppUpdates.CurrentVersion, timeout.Token);
+            var release = knownRelease ?? await AppUpdates.FindUpdate(AppUpdates.CurrentVersion, timeout.Token);
             if (release is null)
             {
                 if (!closing) MessageBox.Show(this, "You have the latest version.", "File Inventory update");
                 return;
             }
 
+            if (closing || !ConfirmUpdate(release)) return;
             updateRelease = release;
-            if (!closing && !ConfirmUpdate(release))
-                return;
             updateButton.Text = "Cancel download";
             UpdateScanDisplay();
             var downloadProgress = new Progress<long>(bytes =>
