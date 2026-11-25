@@ -11,6 +11,7 @@ sealed partial class InventoryWindow
     readonly Button themeButton = new() { AutoSize = true };
     readonly Button moreButton = new() { Text = "More", AutoSize = true };
     readonly Button duplicatesButton = new() { Text = "Duplicates", AutoSize = true };
+    readonly Button deepSearchButton = new() { Text = "Deep Search", AutoSize = true };
     readonly Button changesButton = new() { Text = "Changes", AutoSize = true };
     readonly Button savedSearchButton = new() { Text = "Saved searches", AutoSize = true };
     readonly Button saveSearchButton = new() { AccessibleName = "Save search", AutoSize = true };
@@ -55,6 +56,7 @@ sealed partial class InventoryWindow
         Theme.SetIcon(cancel, FluentIcon.Cancel);
         Theme.SetIcon(library, FluentIcon.Drives);
         Theme.SetIcon(duplicatesButton, FluentIcon.Duplicates);
+        Theme.SetIcon(deepSearchButton, FluentIcon.Search);
         Theme.SetIcon(changesButton, FluentIcon.History);
         Theme.SetIcon(moreButton, FluentIcon.More);
         Theme.SetIcon(savedSearchButton, FluentIcon.Bookmark);
@@ -76,7 +78,8 @@ sealed partial class InventoryWindow
         toolbar.ColumnStyles.Add(new(SizeType.AutoSize));
         toolbar.RowStyles.Add(new(SizeType.AutoSize));
         toolbar.Controls.Add(CommandGroup(AnchorStyles.Left,
-            scope, refresh, cancel, syncButton, syncSettingsButton, library, duplicatesButton, changesButton), 0, 0);
+            scope, refresh, cancel, syncButton, syncSettingsButton, library, duplicatesButton, changesButton,
+            deepSearchButton), 0, 0);
         toolbar.Controls.Add(CommandGroup(AnchorStyles.Right, themeButton, moreButton), 1, 0);
         InitializeMoreMenu();
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
@@ -103,6 +106,12 @@ sealed partial class InventoryWindow
         {
             using var dialog = new ScanHistoryDialog(catalog, currentTheme, selectedId);
             dialog.ShowDialog(this);
+        };
+        deepSearchButton.Click += (_, _) =>
+        {
+            using var dialog = new DeepSearchDialog(catalog, currentTheme, selectedId);
+            dialog.ShowDialog(this);
+            UpdateSyncTooltip(CloudSync.LoadConfig(catalog.DataDirectory));
         };
         savedSearchButton.Click += (_, _) => ShowSavedSearches();
         saveSearchButton.Click += (_, _) => SaveCurrentSearch();
@@ -281,7 +290,9 @@ sealed partial class InventoryWindow
     static FlowLayoutPanel CommandGroup(AnchorStyles alignment, params Control[] controls)
     {
         var group = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false, Anchor = alignment, Margin = Padding.Empty };
+            WrapContents = alignment == AnchorStyles.Left,
+            Anchor = alignment == AnchorStyles.Left ? AnchorStyles.Left | AnchorStyles.Right : alignment,
+            Margin = Padding.Empty };
         foreach (var control in controls)
         {
             control.Anchor = AnchorStyles.None;
@@ -402,6 +413,7 @@ sealed partial class InventoryWindow
             (browse, "Show the contents of the selected folder in the results."),
             (library, "Manage scanned drives, search scope, drive notes, and exports (Ctrl+D)."),
             (duplicatesButton, "Find matching files across drives and verify copies with SHA-256."),
+            (deepSearchButton, "Deep Search & Content Scan — index and search text inside PDF, DOCX, XLSX, PPTX, and text/code files (Ctrl+Shift+F)."),
             (changesButton, "Review scan history and see which files changed between scans."),
             (searchDrive, "Limit filename searches to the drive selected above."),
             (updateButton, "Check for a newer File Inventory release."),
