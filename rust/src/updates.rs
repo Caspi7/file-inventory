@@ -3,8 +3,11 @@ use semver::Version;
 use serde::Deserialize;
 use crate::EngineResult;
 
-pub const APP_VERSION:&str="1.5.0";
-pub const FULL_RELEASE_NOTES:&str="File Inventory 1.5.0
+pub const APP_VERSION:&str="1.5.1";
+pub const FULL_RELEASE_NOTES:&str="File Inventory 1.5.1
+Local and imported drives are grouped by host. File tables have aligned, sortable columns, and Deep Search refreshes when options change.
+
+File Inventory 1.5.0
 Full Rust + Slint native rewrite
 
 Native drive catalog, incremental scans, Deep Search, duplicate verification, and inventory exchange.
