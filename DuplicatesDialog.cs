@@ -9,16 +9,16 @@ sealed class DuplicatesDialog : Form
     readonly ToolTip tips = new();
     readonly ComboBox scope = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     readonly NumericUpDown minimum = new() { Value = 1, DecimalPlaces = 2, Maximum = 1_000_000_000, Width = 100 };
-    readonly Button find = new() { Text = "Find Duplicates", AutoSize = true };
-    readonly Button verify = new() { Text = "Verify online copies (SHA-256)", AutoSize = true };
-    readonly Button cancel = new() { Text = "Cancel", AutoSize = true };
-    readonly Button copy = new() { Text = "Copy Path", AutoSize = true };
-    readonly Button reveal = new() { Text = "Reveal in Explorer", AutoSize = true };
-    readonly Button export = new() { Text = "Export CSV", AutoSize = true };
+    readonly Button find = UiHelpers.IconButton("Find Duplicates", FluentIcon.Search);
+    readonly Button verify = UiHelpers.IconButton("Verify online copies (SHA-256)", FluentIcon.Check);
+    readonly Button cancel = UiHelpers.IconButton("Cancel", FluentIcon.Cancel);
+    readonly Button copy = UiHelpers.IconButton("Copy Path", FluentIcon.Copy);
+    readonly Button reveal = UiHelpers.IconButton("Reveal in Explorer", FluentIcon.FolderOpen);
+    readonly Button export = UiHelpers.IconButton("Export CSV", FluentIcon.Export);
     readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Height = 9 };
     readonly Label status = new() { AutoSize = true, Text = "Choose a scope and find duplicates." };
-    readonly ListView groups = CreateList("Group #", "Reclaimable Space", "File Size", "Copies", "Verification Status");
-    readonly ListView members = CreateList("Member path", "Drive", "Availability");
+    readonly ListView groups = UiHelpers.DetailsList(("Group #", 150), ("Reclaimable Space", 150), ("File Size", 150), ("Copies", 150), ("Verification Status", 150));
+    readonly ListView members = UiHelpers.DetailsList(("Member path", 150), ("Drive", 150), ("Availability", 150));
     List<Volume> volumes = [];
     List<DuplicateGroup> results = [];
     CancellationTokenSource? verification;
@@ -29,22 +29,14 @@ sealed class DuplicatesDialog : Form
     {
         this.catalog = catalog;
         Text = "Duplicates";
-        Theme.SetIcon(find, FluentIcon.Search);
-        Theme.SetIcon(verify, FluentIcon.Check);
-        Theme.SetIcon(cancel, FluentIcon.Cancel);
-        Theme.SetIcon(copy, FluentIcon.Copy);
-        Theme.SetIcon(reveal, FluentIcon.FolderOpen);
-        Theme.SetIcon(export, FluentIcon.Export);
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(960, 590);
         MinimumSize = new Size(740, 460);
 
         var scopeLabel = new Label { Text = "Scope", AutoSize = true, Margin = new Padding(0, 7, 4, 0) };
         var sizeLabel = new Label { Text = "Min size (MB)", AutoSize = true, Margin = new Padding(8, 7, 4, 0) };
-        var filters = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
-        filters.Controls.AddRange([scopeLabel, scope, sizeLabel, minimum, find, verify, cancel]);
-        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
-        actions.Controls.AddRange([copy, reveal, export]);
+        var filters = UiHelpers.FlowRow(scopeLabel, scope, sizeLabel, minimum, find, verify, cancel);
+        var actions = UiHelpers.FlowRow(copy, reveal, export);
         members.Columns[0].Width = 540;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(12) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -101,14 +93,6 @@ sealed class DuplicatesDialog : Form
             catch (Exception ex) { ShowError(ex); }
         };
         UpdateActions();
-    }
-
-    static ListView CreateList(params string[] columns)
-    {
-        var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
-            MultiSelect = false, HideSelection = false };
-        foreach (string column in columns) list.Columns.Add(column, 150);
-        return list;
     }
 
     async Task FindAsync()
