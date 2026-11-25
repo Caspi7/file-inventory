@@ -1,0 +1,26 @@
+import { Palette as WidgetPalette } from "std-widgets.slint";
+
+export enum ThemeMode { System, Light, Dark, DarkBlue }
+
+export global Palette {
+    in property <ThemeMode> mode: ThemeMode.System;
+    in property <bool> system-dark;
+    out property <bool> dark: mode == ThemeMode.Dark || mode == ThemeMode.DarkBlue || (mode == ThemeMode.System && system-dark);
+    out property <color> bg: mode == ThemeMode.DarkBlue ? #0f172a : dark ? #202022 : #f3f3f5;
+    out property <color> surface: mode == ThemeMode.DarkBlue ? #18233a : dark ? #2b2b2e : #ffffff;
+    out property <color> surface-readonly: mode == ThemeMode.DarkBlue ? #131d31 : dark ? #262629 : #f9f9fb;
+    out property <color> surface-alt: mode == ThemeMode.DarkBlue ? #1e2942 : dark ? #303034 : #fcfcfd;
+    out property <color> surface-hover: mode == ThemeMode.DarkBlue ? #263552 : dark ? #3a3a3f : #f2f4f8;
+    out property <color> surface-pressed: mode == ThemeMode.DarkBlue ? #141e32 : dark ? #28282c : #e8ebf0;
+    out property <color> header-bg: mode == ThemeMode.DarkBlue ? #141f34 : dark ? #26262a : #f6f7fa;
+    out property <color> fg: mode == ThemeMode.DarkBlue ? #e2e8f0 : dark ? #f4f4f6 : #18181b;
+    out property <color> muted: mode == ThemeMode.DarkBlue ? #94a3b8 : dark ? #a6a8b2 : #60626c;
+    out property <color> disabled-fg: mode == ThemeMode.DarkBlue ? #64748b : dark ? #767880 : #9496a0;
+    out property <color> border: mode == ThemeMode.DarkBlue ? #33415c : dark ? #44444b : #d6d8e0;
+    out property <color> border-strong: mode == ThemeMode.DarkBlue ? #475878 : dark ? #5c5c66 : #bcbfca;
+    out property <color> accent: mode == ThemeMode.DarkBlue ? #007acc : dark ? #0078d4 : #0067c0;
+    out property <color> accent-hover: mode == ThemeMode.DarkBlue ? #1c97ea : dark ? #1a8ae2 : #1676c9;
+    out property <color> accent-pressed: mode == ThemeMode.DarkBlue ? #0062a8 : dark ? #0066b8 : #00549e;
+    out property <color> track-bg: mode == ThemeMode.DarkBlue ? #26344e : dark ? #38383e : #e0e2e8;
+    changed dark => { WidgetPalette.color-scheme = self.dark ? ColorScheme.dark : ColorScheme.light; }
+}
