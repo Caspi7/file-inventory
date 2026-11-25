@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.2 · Benchmark" : "File Inventory 1.3.2";
+        Text = benchmark ? "File Inventory 1.3.3 · Benchmark" : "File Inventory 1.3.3";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -223,6 +223,7 @@ sealed partial class InventoryWindow : Form
             heartbeat.Start();
             await Poll();
             QueueSearch();
+            _ = CheckForUpdatesSilentAsync();
         };
         FormClosing += HandleClose;
         FormClosed += (_, _) => { tray.Visible = false; tray.Dispose(); appIcon.Dispose(); heartbeat.Dispose(); };
@@ -248,6 +249,9 @@ sealed partial class InventoryWindow : Form
             case Keys.Control | Keys.D:
                 library.PerformClick();
                 return true;
+            case Keys.Control | Keys.M:
+                ShowStorageMap();
+                return true;
             case Keys.Control | Keys.Shift | Keys.S:
                 syncButton.PerformClick();
                 return true;
@@ -266,10 +270,12 @@ sealed partial class InventoryWindow : Form
             new("Sync now", "Sync", "Ctrl+Shift+S", syncButton.PerformClick),
             new("Sync settings…", "Sync", "", syncSettingsButton.PerformClick),
             new("Drive Library…", "Inventory", "Ctrl+D", library.PerformClick),
+            new(StorageMapCommand, "Inventory", "Ctrl+M", ShowStorageMap),
             new("Duplicates…", "Inventory", "", duplicatesButton.PerformClick),
             new("Changes…", "Inventory", "", changesButton.PerformClick),
             new("Saved searches", "Search", "", savedSearchButton.PerformClick),
             new(updateButton.Text, "Application", "", updateButton.PerformClick),
+            new("Toggle auto-check for updates", "Application", "", () => SetAutoCheckUpdates(!AutoCheckUpdates)),
             new("Release notes", "Application", "", releaseNotesButton.PerformClick)
         ];
         foreach (var theme in Enum.GetValues<AppTheme>())
@@ -667,6 +673,7 @@ sealed partial class InventoryWindow : Form
         }
         if (readyToClose) return;
         closing = true;
+        startupUpdateCancellation?.Cancel();
         tray.Visible = false;
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
