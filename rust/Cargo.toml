@@ -1,6 +1,6 @@
 [package]
 name = "file-inventory"
-version = "1.5.4"
+version = "1.5.5"
 edition = "2021"
 description = "Fast Windows drive catalog, cross-drive duplicate finder, storage map, and smart Deep Search"
 license = "LicenseRef-Elastic-2.0"
