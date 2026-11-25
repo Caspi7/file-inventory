@@ -184,13 +184,23 @@ static class CloudSync
             }
         }
 
-        // 2. Import snapshots from other machines that are new or updated
+        // 2. Import snapshots present in the sync folder (.finv.gz, .finv.enc, and .fiinventory)
         var state = LoadState(catalog.DataDirectory);
         bool stateDirty = false;
         string ownPrefix = machinePrefix + "__";
+        var localVolumeSanitizedIds = localVolumes
+            .Select(v => SanitizeFilePart(v.Id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingVolumeIds = catalog.Volumes()
+            .Select(v => v.Id)
+            .ToHashSet(StringComparer.Ordinal);
 
-        var snapshotFiles = Directory.EnumerateFiles(config.Folder, "*" + PlainExtension, SearchOption.TopDirectoryOnly)
-            .Concat(Directory.EnumerateFiles(config.Folder, "*" + EncryptedExtension, SearchOption.TopDirectoryOnly));
+        var snapshotFiles = Directory.EnumerateFiles(config.Folder, "*", SearchOption.TopDirectoryOnly)
+            .Where(p =>
+                p.EndsWith(PlainExtension, StringComparison.OrdinalIgnoreCase) ||
+                p.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase) ||
+                p.EndsWith(".fiinventory", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         foreach (string filePath in snapshotFiles)
         {
@@ -198,21 +208,35 @@ static class CloudSync
             string fileName = Path.GetFileName(filePath);
             if (fileName.StartsWith(ownPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                skipped++;
-                continue;
+                string withoutPrefix = fileName[ownPrefix.Length..];
+                string stem = withoutPrefix.EndsWith(PlainExtension, StringComparison.OrdinalIgnoreCase)
+                    ? withoutPrefix[..^PlainExtension.Length]
+                    : withoutPrefix.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase)
+                        ? withoutPrefix[..^EncryptedExtension.Length]
+                        : Path.GetFileNameWithoutExtension(withoutPrefix);
+                if (localVolumeSanitizedIds.Contains(stem))
+                {
+                    skipped++;
+                    continue;
+                }
             }
 
             try
             {
                 long writeTicks = File.GetLastWriteTimeUtc(filePath).Ticks;
-                if (state.TryGetValue(fileName, out long previousTicks) && previousTicks >= writeTicks)
+                string stateVolKey = "vol:" + fileName;
+                bool hasImportedVol = state.TryGetValue(stateVolKey, out long volHash) &&
+                    existingVolumeIds.Any(id => StringComparer.Ordinal.GetHashCode(id) == volHash);
+                if (hasImportedVol && state.TryGetValue(fileName, out long previousTicks) && previousTicks >= writeTicks)
                 {
                     skipped++;
                     continue;
                 }
 
-                ImportSnapshot(catalog, filePath, config.Passphrase);
+                string importedId = ImportSnapshot(catalog, filePath, config.Passphrase);
+                existingVolumeIds.Add(importedId);
                 state[fileName] = writeTicks;
+                state[stateVolKey] = StringComparer.Ordinal.GetHashCode(importedId);
                 stateDirty = true;
                 imported++;
             }
@@ -229,13 +253,10 @@ static class CloudSync
         return new SyncSummary(exported, imported, skipped, errors);
     }
 
-    static void ImportSnapshot(Catalog catalog, string sourcePath, string passphrase)
+    static string ImportSnapshot(Catalog catalog, string sourcePath, string passphrase)
     {
         if (!IsEncryptedSnapshot(sourcePath))
-        {
-            catalog.ImportInventory(sourcePath);
-            return;
-        }
+            return catalog.ImportInventory(sourcePath);
 
         if (string.IsNullOrEmpty(passphrase))
             throw new InvalidDataException("Snapshot is encrypted. Enter the sync passphrase in Cloud Sync settings.");
@@ -244,7 +265,7 @@ static class CloudSync
         try
         {
             DecryptFile(sourcePath, tempPlain, passphrase);
-            catalog.ImportInventory(tempPlain);
+            return catalog.ImportInventory(tempPlain);
         }
         finally
         {
