@@ -1,0 +1,106 @@
+import { LineEdit, ComboBox, CheckBox, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Action, Label, Grid, DataRow, Meter } from "controls.slint";
+import { Palette } from "theme.slint";
+
+export component DeepSearch inherits VerticalLayout {
+    in property <[string]> drives;
+    in property <[DataRow]> rows;
+    in property <string> status;
+    in property <bool> close-match;
+    in property <string> estimate;
+    in property <string> progress-text;
+    in property <float> progress;
+    in property <bool> busy;
+    in-out property <string> query;
+    in-out property <string> extension;
+    in-out property <int> drive: 0;
+    in-out property <int> scan-drive: 0;
+    in-out property <int> match-mode: 0;
+    in-out property <int> resource-mode: 0;
+    in-out property <bool> fuzzy: true;
+    in-out property <bool> text-files: true;
+    in-out property <bool> office: true;
+    in-out property <bool> pdf: true;
+    in-out property <bool> excerpts: true;
+    in-out property <bool> skip-system: true;
+    in-out property <int> selection: -1;
+    property <bool> tips;
+    callback action(string);
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        LineEdit { placeholder-text: "Search inside files… e.g. (invoice OR receipt) 2025 -draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
+        ComboBox { model: root.drives; current-index <=> root.drive; width: 155px; }
+        LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 100px; }
+        Action { label: "Search"; primary: true; clicked => { root.action("deep-search"); } }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        ComboBox { model: ["Smart (Boolean + Close)", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]; current-index <=> root.match-mode; width: 190px; }
+        CheckBox { text: "Typo-tolerant"; checked <=> root.fuzzy; }
+        for helper in ["+ AND", "+ OR", "+ Exclude", "\"Phrase\"", "(Group)", "? Tips"] : Action {
+            label: helper;
+            clicked => {
+                if helper == "? Tips" { root.tips = !root.tips; }
+                else { root.query += helper == "+ AND" ? " AND " : helper == "+ OR" ? " OR " : helper == "+ Exclude" ? " -" : helper == "(Group)" ? " (invoice OR receipt)" : " \"exact phrase\""; }
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if tips : Rectangle {
+        height: 34px; background: Palette.surface-alt; border-radius: 5px;
+        Label { x: 8px; width: parent.width - 16px; text: "Try (invoice OR receipt) 2025 -draft, \"annual report\", or backup AND recovery."; }
+    }
+    HorizontalLayout {
+        spacing: 8px; height: 23px;
+        Label { text: root.status; color: Palette.muted; horizontal-stretch: 1; }
+        if root.close-match : Rectangle {
+            width: 100px; border-radius: 11px; border-width: 1px;
+            border-color: Palette.accent; background: Palette.surface-readonly;
+            Label { text: "Close match"; color: Palette.accent; horizontal-alignment: center; }
+        }
+    }
+    Grid {
+        vertical-stretch: 1; compact: true; rows: root.rows; selection <=> root.selection;
+        headers: { a: "Filename", b: "Drive", c: "Excerpt", d: "Size", e: "Modified" };
+        activated(i) => { root.action("deep-reveal"); }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Action { label: "Copy Path"; enabled: root.selection >= 0; clicked => { root.action("deep-copy"); } }
+        Action { label: "Reveal in Explorer"; enabled: root.selection >= 0; clicked => { root.action("deep-reveal"); } }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    Rectangle {
+        background: Palette.surface-readonly; border-color: Palette.border; border-width: 1px; border-radius: 7px;
+        VerticalLayout {
+            spacing: 7px; padding: 10px;
+            Label { text: "Background Content Scan & Sync"; font-weight: 650; height: 24px; }
+            HorizontalLayout {
+                spacing: 8px;
+                ComboBox { model: root.drives; current-index <=> root.scan-drive; width: 145px; selected => { root.action("estimate"); } }
+                ComboBox { model: ["Eco", "Balanced", "Turbo"]; current-index <=> root.resource-mode; width: 100px; selected => { root.action("estimate"); } }
+                CheckBox { text: "Text & Code"; checked <=> root.text-files; toggled => { root.action("estimate"); } }
+                CheckBox { text: "Office"; checked <=> root.office; toggled => { root.action("estimate"); } }
+                CheckBox { text: "PDF"; checked <=> root.pdf; toggled => { root.action("estimate"); } }
+                CheckBox { text: "Offline excerpts"; checked <=> root.excerpts; toggled => { root.action("estimate"); } }
+                CheckBox { text: "Skip system folders"; checked <=> root.skip-system; toggled => { root.action("estimate"); } }
+            }
+            Label { text: root.estimate; color: Palette.muted; height: 22px; }
+            HorizontalLayout {
+                spacing: 7px;
+                Action { label: "Scan content"; primary: true; enabled: !root.busy; clicked => { root.action("content-scan"); } }
+                Action { label: "Cancel"; enabled: root.busy; clicked => { root.action("cancel"); } }
+                Meter { value: root.progress; horizontal-stretch: 1; }
+                Label { text: root.progress-text; min-width: 200px; }
+            }
+            HorizontalLayout {
+                spacing: 7px;
+                Action { label: "Sync content"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
+                Action { label: "Export content…"; enabled: !root.busy; clicked => { root.action("content-export"); } }
+                Action { label: "Import content…"; enabled: !root.busy; clicked => { root.action("content-import"); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+}
