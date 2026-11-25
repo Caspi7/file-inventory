@@ -1,0 +1,49 @@
+import { ScrollView } from "std-widgets.slint";
+import { Action } from "controls.slint";
+import { Palette } from "theme.slint";
+
+export struct GuideSection { title: string, subtitle: string, body: string }
+
+export component Guide inherits VerticalLayout {
+    in property <[GuideSection]> sections;
+    property <int> selected: 0;
+    property <GuideSection> current: root.sections.length > 0 ? root.sections[root.selected] : { title: "", subtitle: "", body: "" };
+    spacing: 12px;
+
+    HorizontalLayout {
+        spacing: 4px;
+        for section[i] in root.sections : Action {
+            tab: true;
+            label: section.title;
+            primary: i == root.selected;
+            clicked => { root.selected = i; }
+        }
+    }
+
+    Rectangle {
+        vertical-stretch: 1;
+        background: Palette.surface-alt;
+        border-radius: 7px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 12px;
+            Text {
+                text: root.current.subtitle;
+                color: Palette.fg;
+                font-size: 20px;
+                font-weight: 650;
+                wrap: word-wrap;
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                Text {
+                    width: parent.width;
+                    text: root.current.body;
+                    color: Palette.fg;
+                    font-size: 15px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
