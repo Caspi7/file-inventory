@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.6 · Benchmark" : "File Inventory 1.3.6";
+        Text = benchmark ? "File Inventory 1.3.7 · Benchmark" : "File Inventory 1.3.7";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
