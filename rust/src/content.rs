@@ -268,23 +268,34 @@ impl ContentIndex {
             options:&ContentSearchOptions)->EngineResult<ContentSearchResult> {
         if query.trim().is_empty() || limit==0 {return Ok(ContentSearchResult::default());}
         let invalid_query=|| ContentSearchResult {summary:"Enter a valid search with at least one positive term".into(),..Default::default()};
-        let Some((root,explicit))=content_query::parse(query,options.mode) else {return Ok(invalid_query());};
+        let natural = match (options.mode == ContentMatchMode::Smart).then(|| content_query::smart(query)).flatten() {
+            Some(Some(query)) => Some(query),
+            Some(None) => return Ok(invalid_query()),
+            None => None,
+        };
+        let root = if let Some(query) = &natural {
+            query.root()
+        } else {
+            let Some((root, _)) = content_query::parse(query, options.mode) else { return Ok(invalid_query()); };
+            root
+        };
         let mut positive=Vec::new();
         root.positive(false,&mut positive);
         if positive.is_empty() {return Ok(invalid_query());}
         let db=self.attached()?;
         db.execute_batch("BEGIN")?;
         let extension=extension.map(|s|normalize_key(s.trim_start_matches('.')));
-        let concepts:Vec<_>=positive.iter().copied().filter(|term| term.prefix || term.phrase ||
-            !STOP_WORDS.split_ascii_whitespace().any(|word|word.eq_ignore_ascii_case(&term.text))).collect();
-        let smart=options.mode==ContentMatchMode::Smart && !explicit && positive.len()>=2 && !concepts.is_empty();
+        let blended = natural.as_ref().filter(|query| query.groups.len() > 1);
         let mut corrections=HashMap::new();
-        let fetch=if smart && concepts.len()>=3 {limit.max(3)} else {limit};
-        let mut hits=read_hits(&db,&root,&corrections,volume,extension.as_deref(),fetch)?;
+        let mut hits = if natural.is_none() {
+            read_hits(&db, &root, &corrections, volume, extension.as_deref(), limit)?
+        } else {
+            Vec::new()
+        };
         if options.fuzzy_matching {
             let mut seen=HashSet::new();
             let mut vocab=false;
-            for word in positive.iter().filter(|t|!t.prefix && (!t.phrase || hits.is_empty()))
+            for word in positive.iter().filter(|t|!t.prefix && (!t.phrase || (natural.is_none() && hits.is_empty())))
                 .flat_map(|t|words(&t.text)).map(str::to_lowercase).filter(|word|seen.insert(word.clone())).take(32) {
                 let len=word.chars().count();
                 if !(3..=64).contains(&len) || word.chars().all(char::is_numeric) {continue;}
@@ -297,28 +308,22 @@ impl ContentIndex {
                 let alternatives=spellings(&db,&word)?;
                 if !alternatives.is_empty() {corrections.insert(word,alternatives);}
             }
-            if !corrections.is_empty() {hits=read_hits(&db,&root,&corrections,volume,extension.as_deref(),fetch)?;}
         }
-        let mut used_relaxed_match=false;
-        if smart && (hits.is_empty() || (hits.len()<3 && concepts.len()>=3)) {
-            let mut relaxed=concepts.iter().map(|&term|Node::Term(term.clone())).reduce(|a,b|a.join(b,true)).unwrap();
-            let mut exclusions=Vec::new();
-            root.exclusions(&mut exclusions);
-            for node in exclusions {relaxed=relaxed.join(node.clone(),false);}
-            let mut close=read_hits(&db,&relaxed,&corrections,volume,extension.as_deref(),limit.saturating_mul(3).max(150))?;
-            if !close.is_empty() {
-                let ids=serde_json::to_string(&close.iter().map(|(hit,_)|hit.file_id).collect::<Vec<_>>())?;
-                let mut coverage=HashMap::<i64,usize>::new();
-                for term in &concepts {
-                    for id in rows(&db,"SELECT rowid FROM content_fts WHERE content_fts MATCH ?1
-                      AND rowid IN (SELECT value FROM json_each(?2))",params![term.render(&corrections,false),ids],|r|r.get(0))? {
-                        *coverage.entry(id).or_default()+=1;
-                    }
-                }
-                close.sort_by(|(a,_),(b,_)|coverage.get(&b.file_id).cmp(&coverage.get(&a.file_id))
-                    .then_with(||a.rank.total_cmp(&b.rank)).then(a.file_id.cmp(&b.file_id)));
-                hits=close;
-                used_relaxed_match=true;
+        if natural.is_some() || !corrections.is_empty() {
+            let fetch = if blended.is_some() { limit.saturating_mul(4).max(250) } else { limit };
+            hits = read_hits(&db, &root, &corrections, volume, extension.as_deref(), fetch)?;
+        }
+        let mut summary = Vec::new();
+        if let Some(query) = natural.as_ref().filter(|query| !query.inferred.is_empty()) {
+            summary.push(format!("Excluded: {}", query.inferred.join(", ")));
+        }
+        let mut used_relaxed_match = false;
+        if let Some(query) = blended.filter(|_| !hits.is_empty()) {
+            let exact = rank_smart(&db, &mut hits, &query.groups, &corrections, limit)?;
+            let close = hits.len().min(limit) - exact;
+            used_relaxed_match = close > 0;
+            if used_relaxed_match {
+                summary.push(format!("Smart match ({exact} exact, {close} close)"));
             }
         }
         let snippet_terms:Vec<_>=positive.into_iter().flat_map(|term|words(&term.text))
@@ -332,8 +337,11 @@ impl ContentIndex {
         }).collect();
         let mut fuzzy_corrections:Vec<_>=corrections.into_iter().map(|(word,values)|format!("{word} → {}*",values[0])).collect();
         fuzzy_corrections.sort_unstable();
+        if !fuzzy_corrections.is_empty() {
+            summary.push(format!("Typo: {}", fuzzy_corrections.join(", ")));
+        }
         Ok(ContentSearchResult {hits,fuzzy_corrections,used_relaxed_match,
-            summary:if used_relaxed_match {"Close match (matched best keywords)".into()} else {String::new()} })
+            summary:summary.join(" · ") })
     }
 
     pub fn export_content(&self,destination:&Path,volume:Option<&str>)->EngineResult<()> {
@@ -470,6 +478,76 @@ fn read_hits(db:&Connection,node:&Node,corrections:&HashMap<String,Vec<String>>,
                 rank:r.get(10)?},r.get(9)?))
         })
 }
+
+fn rank_smart(
+    db: &Connection,
+    hits: &mut [(ContentSearchHit, Option<Vec<u8>>)],
+    groups: &[Node],
+    corrections: &HashMap<String, Vec<String>>,
+    limit: usize,
+) -> EngineResult<usize> {
+    let ids = serde_json::to_string(&hits.iter().map(|(hit, _)| hit.file_id).collect::<Vec<_>>())?;
+    let mut coverage = HashMap::<i64, u32>::new();
+    let mut patterns = Vec::new();
+    for (index, group) in groups.iter().enumerate() {
+        for id in rows(db, "SELECT rowid FROM content_fts WHERE content_fts MATCH ?1
+            AND rowid IN (SELECT value FROM json_each(?2))",
+            params![group.compile(corrections, false).0, ids], |r| r.get(0))? {
+            *coverage.entry(id).or_default() |= 1 << index;
+        }
+        let mut terms = Vec::new();
+        group.positive(false, &mut terms);
+        patterns.push(terms.into_iter().flat_map(|term| {
+            let exact = (words(&term.text).map(str::to_lowercase).collect(), term.prefix);
+            let fuzzy = corrections.get(&term.text).into_iter().flatten()
+                .filter(|_| !term.prefix && !term.phrase)
+                .map(|word| (vec![word.clone()], true));
+            std::iter::once(exact).chain(fuzzy)
+        }).collect::<Vec<_>>());
+    }
+    let mut scores = HashMap::new();
+    for (hit, compressed) in hits.iter() {
+        let (filename, name_adjacency) = lexical_signals(&hit.name, &patterns);
+        let (body, body_adjacency) = compressed.as_deref().and_then(|data| decompress(data).ok())
+            .map_or((0, 0), |text| lexical_signals(&text, &patterns));
+        let covered = (coverage.get(&hit.file_id).copied().unwrap_or_default() | filename | body).count_ones();
+        let bonus = filename.count_ones() * 3 + (name_adjacency + body_adjacency) * 4;
+        scores.insert(hit.file_id, (covered, bonus));
+    }
+    hits.sort_by(|(a, _), (b, _)| scores[&b.file_id].cmp(&scores[&a.file_id])
+        .then_with(|| a.rank.total_cmp(&b.rank)).then(a.file_id.cmp(&b.file_id)));
+    Ok(hits.iter().take(limit)
+        .take_while(|(hit, _)| scores[&hit.file_id].0 as usize == groups.len()).count())
+}
+
+fn lexical_signals(text: &str, groups: &[Vec<(Vec<String>, bool)>]) -> (u32, u32) {
+    let text = text.to_lowercase();
+    let tokens = words(&text).collect::<Vec<_>>();
+    let mut covered = 0;
+    let mut adjacency = 0;
+    let mut previous_ends = vec![false; tokens.len() + 1];
+    let mut ends = previous_ends.clone();
+    for (index, group) in groups.iter().enumerate() {
+        let mut adjacent = false;
+        for (pattern, prefix) in group {
+            for (start, window) in tokens.windows(pattern.len()).enumerate() {
+                let matched = window.iter().zip(pattern).enumerate().all(|(i, (token, word))| {
+                    if *prefix && i + 1 == pattern.len() { token.starts_with(word) } else { *token == word }
+                });
+                if matched {
+                    covered |= 1 << index;
+                    ends[start + pattern.len()] = true;
+                    adjacent |= previous_ends[start];
+                }
+            }
+        }
+        adjacency += u32::from(adjacent);
+        std::mem::swap(&mut ends, &mut previous_ends);
+        ends.fill(false);
+    }
+    (covered, adjacency)
+}
+
 fn spellings(db:&Connection,word:&str)->rusqlite::Result<Vec<String>> {
     let len=word.chars().count();
     let tolerance=match len {0..=5=>1,6..=10=>2,_=>3};
@@ -519,7 +597,6 @@ fn spellings(db:&Connection,word:&str)->rusqlite::Result<Vec<String>> {
     Ok(best.into_iter().map(|(_,_,_,term)|term).collect())
 }
 
-const STOP_WORDS:&str="a an the and or of to in on for with about from by at as is are was were be been that this these those it its my your our their file files document documents looking find something where what when how into onto over under between through during before after above below up down out off all any both each few more most other some such only own same so than too very can will just should now";
 fn snippet(body:&str,terms:&[String])->String {
     const WIDTH:usize=240;
     let body_chars:Vec<_>=body.char_indices().collect();
