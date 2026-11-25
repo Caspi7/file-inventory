@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.7 · Benchmark" : "File Inventory 1.3.7";
+        Text = benchmark ? "File Inventory 1.4.0 · Benchmark" : "File Inventory 1.4.0";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -243,6 +243,9 @@ sealed partial class InventoryWindow : Form
                 query.Focus();
                 query.SelectAll();
                 return true;
+            case Keys.Control | Keys.Shift | Keys.F:
+                deepSearchButton.PerformClick();
+                return true;
             case Keys.F5:
                 refresh.PerformClick();
                 return true;
@@ -272,6 +275,7 @@ sealed partial class InventoryWindow : Form
             new("Drive Library…", "Inventory", "Ctrl+D", library.PerformClick),
             new(StorageMapCommand, "Inventory", "Ctrl+M", ShowStorageMap),
             new("Duplicates…", "Inventory", "", duplicatesButton.PerformClick),
+            new("Deep Search…", "Search", "Ctrl+Shift+F", deepSearchButton.PerformClick),
             new("Changes…", "Inventory", "", changesButton.PerformClick),
             new("Saved searches", "Search", "", savedSearchButton.PerformClick),
             new(updateButton.Text, "Application", "", updateButton.PerformClick),
