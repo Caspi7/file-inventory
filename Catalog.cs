@@ -53,7 +53,7 @@ sealed partial class Catalog
             DataSource = databasePath, Pooling = false, DefaultTimeout = 30
         }.ToString());
         db.Open();
-        Execute(db, "PRAGMA temp_store=MEMORY;");
+        Execute(db, "PRAGMA temp_store=MEMORY; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-65536; PRAGMA mmap_size=268435456; PRAGMA busy_timeout=5000;");
         return db;
     }
 
