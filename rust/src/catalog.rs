@@ -182,7 +182,22 @@ impl Catalog {
             tx.execute(&format!("DELETE FROM {table} WHERE volume=?1"), [id])?;
         }
         tx.execute("DELETE FROM volumes WHERE id=?1", [id])?;
-        tx.commit()
+        tx.commit()?;
+        let _ = db.execute_batch("PRAGMA incremental_vacuum;");
+        let content_db_path = self.data_dir.join("content.sqlite3");
+        if content_db_path.exists() {
+            if let Ok(mut cdb) = Connection::open(&content_db_path) {
+                let _ = configure(&cdb);
+                if let Ok(ctx) = cdb.transaction_with_behavior(TransactionBehavior::Immediate) {
+                    let _ = ctx.execute("DELETE FROM content_fts WHERE rowid IN (SELECT file_id FROM content_files WHERE volume=?1 AND status=1)", [id]);
+                    let _ = ctx.execute("DELETE FROM content_sizes WHERE file_id IN (SELECT file_id FROM content_files WHERE volume=?1)", [id]);
+                    let _ = ctx.execute("DELETE FROM content_files WHERE volume=?1", [id]);
+                    let _ = ctx.commit();
+                }
+                let _ = cdb.execute_batch("PRAGMA incremental_vacuum;");
+            }
+        }
+        Ok(())
     }
 
     pub fn browse_folder(&self, volume_id: &str, parent_rel: &str, show_removed: bool, limit: usize) -> Result<Vec<FileEntry>> {
