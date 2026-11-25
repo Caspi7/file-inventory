@@ -79,7 +79,7 @@ sealed class StorageMapDialog : Form
         };
         SizeSplit();
 
-        var legend = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        var legend = UiHelpers.FlowRow();
         foreach (var (name, color) in Categories)
         {
             var swatch = new PictureBox { Size = new(12, 12), Margin = new(5, 5, 2, 2) };
