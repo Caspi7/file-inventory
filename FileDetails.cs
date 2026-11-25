@@ -29,9 +29,10 @@ sealed partial class InventoryWindow
                 return;
             }
 
+            string driveLabel = volumesById.TryGetValue(branch.Volume, out var volume) ? volume.DisplayName : metadata.Volume;
             fileDetailsText.Text = string.Join(Environment.NewLine,
                 metadata.FullPath,
-                $"Size: {metadata.Bytes:N0} bytes    Drive: {metadata.Volume}    Status: {metadata.Status}",
+                $"Size: {metadata.Bytes:N0} bytes    Drive: {driveLabel}    Status: {metadata.Status}",
                 $"Created: {metadata.Created:G}    Modified: {metadata.Modified:G}",
                 $"Last seen: {metadata.LastSeen:G}    Attributes: {metadata.Attributes}",
                 metadata.Removed is { } removed ? $"Detected missing: {removed:G}" : "");
