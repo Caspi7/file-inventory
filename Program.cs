@@ -105,13 +105,13 @@ sealed partial class InventoryWindow : Form
         this.catalog = catalog;
         this.benchmark = benchmark;
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.10 · Benchmark" : "File Inventory 1.2.10";
+        Text = benchmark ? "File Inventory 1.2.12 · Benchmark" : "File Inventory 1.2.12";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
         Height = 830;
         MinimumSize = new(850, 630);
-        Font = new Font("Segoe UI", 10);
+        Font = Theme.BodyFont;
         StartPosition = FormStartPosition.CenterScreen;
 
         status.Items.AddRange(["Any status", "Online", "Offline"]);
