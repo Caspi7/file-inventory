@@ -4,6 +4,13 @@ using System.Runtime.InteropServices;
 
 namespace FileInventory;
 
+enum AppTheme
+{
+    Light,
+    Dark,
+    DarkBlue
+}
+
 static class Theme
 {
     const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
@@ -153,6 +160,29 @@ static class Theme
         TrackBg = Color.FromArgb(56, 56, 62)
     };
 
+    static readonly Palette DarkBluePalette = new()
+    {
+        Bg = Color.FromArgb(15, 23, 42),
+        Surface = Color.FromArgb(24, 35, 58),
+        SurfaceReadOnly = Color.FromArgb(19, 29, 49),
+        SurfaceAlt = Color.FromArgb(30, 41, 66),
+        SurfaceHover = Color.FromArgb(38, 53, 82),
+        SurfacePressed = Color.FromArgb(20, 30, 50),
+        SurfaceDisabled = Color.FromArgb(20, 29, 48),
+        HeaderBg = Color.FromArgb(20, 31, 52),
+        Fg = Color.FromArgb(226, 232, 240),
+        Muted = Color.FromArgb(148, 163, 184),
+        DisabledFg = Color.FromArgb(100, 116, 139),
+        Border = Color.FromArgb(51, 65, 92),
+        BorderStrong = Color.FromArgb(71, 88, 120),
+        Accent = Color.FromArgb(0, 122, 204),
+        AccentHover = Color.FromArgb(28, 151, 234),
+        AccentPressed = Color.FromArgb(0, 98, 168),
+        AccentDisabledBg = Color.FromArgb(30, 52, 76),
+        AccentDisabledFg = Color.FromArgb(120, 150, 180),
+        TrackBg = Color.FromArgb(38, 52, 78)
+    };
+
     static readonly string BodyFontFamily = ResolveFontFamily("Segoe UI Variable Text", "Segoe UI");
     static readonly string SemiboldFontFamily = ResolveFontFamily("Segoe UI Variable Text Semibold", BodyFontFamily);
 
@@ -191,10 +221,40 @@ static class Theme
     public static void MarkSectionTitle(Label label) => label.Tag = "section-title";
     public static void MarkPrimaryLabel(Label label) => label.Tag = "primary-label";
 
-    public static void Apply(Form form, bool dark)
+    public static AppTheme LoadPreference(string dataDirectory)
     {
+        try
+        {
+            var path = Path.Combine(dataDirectory, "theme.txt");
+            if (File.Exists(path) && Enum.TryParse<AppTheme>(File.ReadAllText(path).Trim(), true, out var saved))
+                return saved;
+        }
+        catch { }
+        return AppTheme.Light;
+    }
+
+    public static void SavePreference(string dataDirectory, AppTheme theme)
+    {
+        try
+        {
+            Directory.CreateDirectory(dataDirectory);
+            File.WriteAllText(Path.Combine(dataDirectory, "theme.txt"), theme.ToString());
+        }
+        catch { }
+    }
+
+    public static void Apply(Form form, bool dark) => Apply(form, dark ? AppTheme.Dark : AppTheme.Light);
+
+    public static void Apply(Form form, AppTheme theme)
+    {
+        bool dark = theme != AppTheme.Light;
         isDark = dark;
-        current = dark ? DarkPalette : LightPalette;
+        current = theme switch
+        {
+            AppTheme.Dark => DarkPalette,
+            AppTheme.DarkBlue => DarkBluePalette,
+            _ => LightPalette
+        };
 
         try
         {
