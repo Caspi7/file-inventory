@@ -270,7 +270,7 @@ impl State {
                 self.close(app);
             }
             "drive-toggle" | "drive-select" | "drive-all" | "drive-none" | "drive-apply" |
-            "drive-save" | "drive-import" | "drive-export" | "drive-remove" => self.drive_action(app, action, i)?,
+            "drive-save" | "drive-import" | "drive-export" | "drive-remove" | "drive-remove-row" => self.drive_action(app, action, i)?,
             "deep" => {
                 self.open(app, "deep", "Deep Search");
                 self.deep_drives(app);
@@ -750,12 +750,20 @@ impl State {
             },
             "drive-import" => self.choose_inventory(app),
             "drive-export" => if let Some(v) = active { self.export_inventory(app, v); },
-            "drive-remove" => if let Some(v) = active {
-                if v.online { return Err("Only offline drives can be removed".into()); }
-                self.open(app, "remove", "Remove Offline Drive");
-                app.set_dialog_field(format!("Remove the inventory for {}?", volume_label(&v)).into());
-                self.removing = Some(v);
-            },
+            "drive-remove" | "drive-remove-row" => {
+                let target = if action == "drive-remove-row" { self.drive_choice(i as i32).cloned() } else { active };
+                if let Some(v) = target {
+                    let title = if v.online { "Remove Drive Inventory" } else { "Remove Drive" };
+                    let prompt = if v.online {
+                        format!("Clear all indexed files & Deep Search content for {} and hide it from selected drives?", volume_label(&v))
+                    } else {
+                        format!("Permanently remove {} and all its indexed files & Deep Search content?", volume_label(&v))
+                    };
+                    self.open(app, "remove", title);
+                    app.set_dialog_field(prompt.into());
+                    self.removing = Some(v);
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -1357,17 +1365,19 @@ impl State {
                 message(app, "Search saved");
             }
             "remove" => if let Some(volume) = self.removing.clone() {
-                let Some(cancel) = self.begin(app, "inventory", "Removing offline drive…") else { return Ok(()); };
+                let Some(cancel) = self.begin(app, "inventory", "Removing drive…") else { return Ok(()); };
+                self.checked.remove(&volume.id);
+                let remaining = self.volumes.iter().filter(|v| v.id != volume.id && self.checked.contains(&v.id)).map(|v| v.id.clone()).collect::<Vec<_>>();
+                let _ = util::save_selected_drives(&self.catalog.data_dir, Some(&remaining));
+                self.visible = Some(remaining);
                 self.close(app);
                 self.work(app, move |catalog| {
                     if cancel.load(Ordering::Relaxed) { return Ok("Operation cancelled".into()); }
-                    if catalog.discover_volumes()?.iter().any(|drive| drive.id == volume.id && drive.online) {
-                        return Err("The drive is online. Disconnect it before removing its inventory.".into());
-                    }
                     catalog.delete_volume(&volume.id)?;
                     Ok(format!("Removed {}", volume_label(&volume)))
                 }, |state, app, result| {
                     state.end(app, result);
+                    state.refresh_drives(app, false);
                     state.open_drives(app, "library");
                     state.update_library(app);
                 });
