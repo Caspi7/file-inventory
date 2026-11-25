@@ -1,0 +1,65 @@
+[package]
+name = "file-inventory"
+version = "1.5.0"
+edition = "2021"
+description = "Fast Windows drive catalog, cross-drive duplicate finder, storage map, and smart Deep Search"
+license = "LicenseRef-Elastic-2.0"
+
+[[bin]]
+name = "FileInventory"
+path = "src/main.rs"
+
+[dependencies]
+slint = { version = "1.9", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "unstable-winit-030",
+    "renderer-femtovg",
+    "renderer-software",
+] }
+rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite", "functions", "hooks"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Globalization",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+    "Wdk_Storage_FileSystem",
+    "Wdk_Foundation",
+] }
+crossbeam-channel = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+brotli = "7"
+flate2 = "1"
+aes-gcm = "0.10"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.37"
+chrono = "0.4"
+dirs = "5"
+arboard = "3"
+regex = "1"
+semver = "1"
+zeroize = "1"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+
+[target.'cfg(windows)'.dependencies]
+rfd = { version = "0.15", default-features = false }
+
+[build-dependencies]
+slint-build = "1.9"
+winres = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
