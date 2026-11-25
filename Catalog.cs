@@ -57,7 +57,7 @@ sealed class Catalog
         var databasePath = path ?? database;
         var db = new SqliteConnection(new SqliteConnectionStringBuilder
         {
-            DataSource = databasePath, Pooling = false, DefaultTimeout = 30
+            DataSource = databasePath, Pooling = true, DefaultTimeout = 30
         }.ToString());
         db.Open();
         Execute(db, "PRAGMA temp_store=MEMORY;");
