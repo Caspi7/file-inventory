@@ -45,14 +45,17 @@ sealed partial class InventoryWindow
         query.Width = 320;
         refresh.Dock = DockStyle.None;
         refresh.Width = 175;
-        refresh.Height = 36;
+        refresh.Height = 32;
         scanState.Dock = DockStyle.Top;
         scanState.UseMnemonic = false;
         location.UseMnemonic = false;
+        Theme.MarkPrimaryLabel(location);
         details.Height = 140;
         var toolbar = Flow();
-        toolbar.Padding = new Padding(8);
+        toolbar.Padding = new Padding(10, 8, 10, 6);
         toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton, releaseNotesButton, themeButton]);
+        foreach (Control item in toolbar.Controls)
+            item.Margin = item is Label ? new Padding(2, 8, 6, 2) : new Padding(0, 2, 6, 2);
         themeButton.Click += (_, _) =>
         {
             darkMode = !darkMode;
@@ -62,10 +65,11 @@ sealed partial class InventoryWindow
         Load += (_, _) => Theme.Apply(this, darkMode);
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
-            RowCount = 1, Padding = new Padding(12, 4, 8, 4) };
+            RowCount = 1, Padding = new Padding(12, 2, 12, 4) };
         scanLine.ColumnStyles.Add(new(SizeType.Absolute, 265));
         scanLine.ColumnStyles.Add(new(SizeType.Percent, 100));
         scanLine.RowStyles.Add(new(SizeType.AutoSize));
+        scanBar.Margin = new Padding(0, 6, 10, 4);
         scanLine.Controls.Add(scanBar, 0, 0);
         scanLine.Controls.Add(scanState, 1, 0);
         scanLine.SizeChanged += (_, _) =>
@@ -79,11 +83,20 @@ sealed partial class InventoryWindow
         scanUiTimer.Start();
         FormClosed += (_, _) => { scanUiTimer.Dispose(); pageCancellation.Dispose(); };
         var filters = Flow();
-        filters.Padding = new Padding(4);
+        filters.Padding = new Padding(4, 4, 4, 4);
         filters.Controls.AddRange([query, status, LabelFor("Extension"), extension,
             LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"), through, includeRemoved]);
+        foreach (Control item in filters.Controls)
+            item.Margin = item is Label ? new Padding(6, 7, 4, 4)
+                : item is CheckBox ? new Padding(8, 6, 4, 4)
+                : new Padding(0, 3, 6, 3);
         var actions = Flow();
+        actions.Padding = new Padding(2, 4, 2, 2);
         actions.Controls.AddRange([copy, reveal, candidates, searchProgress, state]);
+        foreach (Control item in actions.Controls)
+            item.Margin = item is Label ? new Padding(8, 7, 4, 4)
+                : item is ProgressBar ? new Padding(6, 6, 4, 4)
+                : new Padding(0, 2, 6, 2);
         var right = Stack(5);
         fileDetails.Controls.Add(fileDetailsText);
         right.Controls.Add(filters, 0, 0);
@@ -98,9 +111,17 @@ sealed partial class InventoryWindow
         right.RowStyles.Add(new(SizeType.AutoSize));
 
         var schedule = Flow();
+        schedule.Padding = new Padding(0, 4, 0, 4);
         schedule.Controls.AddRange([enabled, hours, LabelFor("hours"), saveSchedule]);
+        foreach (Control item in schedule.Controls)
+            item.Margin = item is CheckBox ? new Padding(0, 6, 6, 2)
+                : item is Label ? new Padding(2, 7, 8, 2)
+                : new Padding(0, 2, 6, 2);
+        var treeTitle = LabelFor("Folders and files");
+        treeTitle.Margin = new Padding(2, 2, 4, 6);
+        Theme.MarkSectionTitle(treeTitle);
         var left = Stack(4);
-        left.Controls.Add(LabelFor("Folders and files"), 0, 0);
+        left.Controls.Add(treeTitle, 0, 0);
         left.Controls.Add(tree, 0, 1);
         left.Controls.Add(schedule, 0, 2);
         left.Controls.Add(details, 0, 3);
