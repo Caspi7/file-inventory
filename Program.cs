@@ -77,7 +77,7 @@ sealed partial class InventoryWindow : Form
     readonly TextBox details = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true,
         ScrollBars = ScrollBars.Vertical, WordWrap = true };
     readonly Label state = new() { AutoSize = true };
-    readonly Button refresh = new() { Text = "Scan selected drive", Dock = DockStyle.Top,
+    readonly Button refresh = new() { Text = "Scan drives…", Dock = DockStyle.Top,
         Height = 44, BackColor = Color.FromArgb(0, 95, 184), ForeColor = Color.White,
         FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = false };
     readonly Button cancel = new() { Text = "Cancel scan", AutoSize = true };
@@ -111,7 +111,7 @@ sealed partial class InventoryWindow : Form
         this.catalog = catalog;
         this.benchmark = benchmark;
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.18 · Benchmark" : "File Inventory 1.2.18";
+        Text = benchmark ? "File Inventory 1.2.19 · Benchmark" : "File Inventory 1.2.19";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -133,12 +133,20 @@ sealed partial class InventoryWindow : Form
         saveSchedule.Click += async (_, _) => await SaveSchedule();
         refresh.Click += (_, _) =>
         {
-            foreach (var volume in SelectedVolumes().Where(volume => volume.Online))
+            var available = volumes.Where(v => v.Online && !running.ContainsKey(v.Id)).ToList();
+            if (available.Count == 0) return;
+            foreach (var volume in PromptDrivesToScan(available))
                 StartScan(volume);
         };
         cancel.Click += (_, _) =>
         {
-            foreach (var volume in SelectedVolumes())
+            var targets = SelectedVolumes().Where(v => running.ContainsKey(v.Id)).ToList();
+            if (targets.Count == 0)
+            {
+                foreach (var scan in running.Values) scan.Cancellation.Cancel();
+                return;
+            }
+            foreach (var volume in targets)
                 if (running.TryGetValue(volume.Id, out var scan)) scan.Cancellation.Cancel();
         };
         copy.Click += (_, _) =>
@@ -372,6 +380,79 @@ sealed partial class InventoryWindow : Form
         ShowVolume();
         ResetTree();
         QueueSearch();
+    }
+
+    List<Volume> PromptDrivesToScan(List<Volume> available)
+    {
+        using var dialog = new Form
+        {
+            Text = "Select Drives to Scan",
+            Width = 480,
+            Height = 340,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            StartPosition = FormStartPosition.CenterParent
+        };
+        var header = new Label
+        {
+            Text = "Choose one or more online drives to scan:",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Padding = new Padding(12, 10, 12, 0)
+        };
+        Theme.MarkSectionTitle(header);
+
+        var list = new CheckedListBox
+        {
+            Dock = DockStyle.Fill,
+            CheckOnClick = true,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        var preselected = SelectedVolumes().Select(v => v.Id).ToHashSet(StringComparer.Ordinal);
+        bool selectAllDefault = preselected.Count == 0 || preselected.Count == available.Count;
+        foreach (var v in available)
+        {
+            bool isChecked = selectAllDefault || preselected.Contains(v.Id);
+            list.Items.Add(new Choice(v.Id, v.DisplayName), isChecked);
+        }
+        var listPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 6, 12, 6) };
+        listPanel.Controls.Add(list);
+
+        var quick = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 40,
+            Padding = new Padding(12, 2, 12, 4)
+        };
+        var selectAll = new Button { Text = "Select all", AutoSize = true };
+        var selectNone = new Button { Text = "Select none", AutoSize = true };
+        selectAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, true); };
+        selectNone.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, false); };
+        quick.Controls.AddRange([selectAll, selectNone]);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            FlowDirection = FlowDirection.RightToLeft,
+            Height = 46,
+            Padding = new Padding(12, 6, 12, 8)
+        };
+        var scanBtn = new Button { Text = "Scan selected", DialogResult = DialogResult.OK, AutoSize = true };
+        var cancelBtn = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        buttons.Controls.AddRange([cancelBtn, scanBtn]);
+
+        dialog.Controls.AddRange([listPanel, header, quick, buttons]);
+        dialog.AcceptButton = scanBtn;
+        dialog.CancelButton = cancelBtn;
+        dialog.Load += (_, _) => Theme.Apply(dialog, currentTheme);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK) return [];
+        var chosen = new List<Volume>();
+        foreach (Choice item in list.CheckedItems)
+            if (item.Id is not null && available.FirstOrDefault(v => v.Id == item.Id) is { } vol)
+                chosen.Add(vol);
+        return chosen;
     }
 
     void StartScan(Volume volume)
