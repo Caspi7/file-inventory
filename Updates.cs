@@ -5,10 +5,11 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.11\n\n" +
-        "• Fixed Dark Mode rendering for ListView headers, ComboBox dropdowns, ProgressBar, and disabled buttons.\n" +
-        "• Added Accept & Install Now dialog with release notes when an update is found.\n" +
-        "• Faster indexing, smaller SQLite catalog, and smaller single-file executable.";
+        "File Inventory 1.2.12\n\n" +
+        "• Full Fluent / Windows 11 UI overhaul: Segoe UI Variable typography, homogeneous rounded buttons, custom-painted Dark Mode for ListView headers (SysHeader32), ComboBox, DateTimePicker, ProgressBar, NumericUpDown, and dialogs.\n" +
+        "• Faster catalog indexing & queries: ordered prefix B-tree publishing, 64–128 MiB SQLite cache, 256 MiB memory-mapped reads, and WAL synchronous=NORMAL.\n" +
+        "• Hybrid installer: checks GitHub for newer versions on startup (with offline fallback) and lets you choose the install folder.\n" +
+        "• Accept & Install Now dialog with release notes in the in-app updater.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
@@ -103,11 +104,12 @@ sealed partial class InventoryWindow
         var header = new Label
         {
             Text = $"File Inventory {release.Version} is ready to download and install.",
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font = Theme.SectionFont,
             Dock = DockStyle.Top,
             Height = 32,
             Padding = new Padding(12, 10, 12, 0)
         };
+        Theme.MarkSectionTitle(header);
         var notesBox = new TextBox
         {
             Multiline = true,
