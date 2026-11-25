@@ -43,7 +43,8 @@ sealed class StorageMapDialog : Form
     public StorageMapDialog(Catalog catalog, AppTheme theme, string? initialVolumeId = null)
     {
         this.catalog = catalog;
-        Text = "Storage Map (WinDirStat)";
+        Text = "Storage Map";
+        Theme.SetIcon(up, FluentIcon.Up);
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new(835, 440);
         Size = new(1150, 720);
@@ -112,6 +113,9 @@ sealed class StorageMapDialog : Form
             copy.Enabled = selection is not null;
             reveal.Enabled = selection is not null && SelectedVolume?.Online == true;
         };
+        Theme.SetMenuIcon(actions, open, FluentIcon.FolderOpen);
+        Theme.SetMenuIcon(actions, copy, FluentIcon.Copy);
+        Theme.SetMenuIcon(actions, reveal, FluentIcon.FolderOpen);
         map.ContextMenuStrip = breakdown.ContextMenuStrip = actions;
 
         up.Click += async (_, _) => await ShowFolder(Path.GetDirectoryName(parentRel) ?? "");
