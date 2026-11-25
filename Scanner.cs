@@ -397,7 +397,12 @@ sealed class Scanner(Catalog catalog)
             Catalog.Execute(db, "ATTACH DATABASE $path AS pending; BEGIN IMMEDIATE;",
                 ("path", stagePath));
             token.ThrowIfCancellationRequested();
-            Catalog.Execute(db, publish, ("volume", volume.Id), ("scan", scan), ("seen", finished));
+            using var prior = Catalog.Command(db, "SELECT succeeded IS NOT NULL FROM volumes WHERE id=$volume;",
+                ("volume", volume.Id));
+            bool hasPriorScan = prior.ExecuteScalar() is 1L;
+            Catalog.Execute(db, publish, ("volume", volume.Id), ("scan", scan), ("seen", finished),
+                ("hasPriorScan", hasPriorScan));
+            Catalog.RebuildFolderStats(db, volume.Id);
             CheckMount(volume);
             token.ThrowIfCancellationRequested();
             Record(finished, true);
@@ -425,7 +430,9 @@ sealed class Scanner(Catalog catalog)
             {
                 try { Catalog.Execute(db, "ROLLBACK;"); }
                 catch (SqliteException) { }
+                Catalog.Execute(db, "BEGIN IMMEDIATE;");
                 Record(Catalog.Now(), false);
+                Catalog.Execute(db, "COMMIT;");
             }
             db.Close();
             File.Delete(stagePath);
@@ -440,6 +447,7 @@ sealed class Scanner(Catalog catalog)
                   outcome=$outcome,issues=$issues WHERE id=$volume;
                 """, ("when", finished), ("outcome", outcome), ("items", count), ("issues", Summary()),
                 ("identity", IdentityTime()), ("scan", scan), ("success", success), ("volume", volume.Id));
+            Catalog.PruneScanHistory(db, volume.Id);
         }
     }
 
