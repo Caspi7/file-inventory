@@ -474,7 +474,7 @@ static class CloudSync
 sealed partial class InventoryWindow
 {
     readonly Button syncButton = new() { Text = "☁ Sync", AutoSize = true };
-    readonly Button syncSettingsButton = new() { Text = "Sync settings…", AutoSize = true };
+    readonly Button syncSettingsButton = new() { Text = "⚙", Width = 34, AccessibleName = "Cloud Sync settings" };
     bool syncingCloud;
     CancellationTokenSource? syncCancellation;
 
@@ -486,12 +486,21 @@ sealed partial class InventoryWindow
         syncButton.ContextMenuStrip = menu;
         syncButton.Click += async (_, _) => await HandleSyncButtonClickAsync();
         syncSettingsButton.Click += async (_, _) => await OpenSyncDialogAsync();
+        Theme.AttachTooltip(syncSettingsButton, tips,
+            "Cloud Sync settings — choose Google Drive, OneDrive, Dropbox, iCloud, or custom folder, auto-sync, and AES-256 encryption.");
+        UpdateSyncTooltip(CloudSync.LoadConfig(catalog.DataDirectory));
         FormClosed += (_, _) =>
         {
             syncCancellation?.Cancel();
             syncCancellation?.Dispose();
             menu.Dispose();
         };
+    }
+
+    void UpdateSyncTooltip(SyncConfig config)
+    {
+        string folder = string.IsNullOrWhiteSpace(config.Folder) ? "not configured yet — click to set up" : config.Folder;
+        tips.SetToolTip(syncButton, $"Cloud Sync folder: {folder} (Ctrl+Shift+S).");
     }
 
     async Task HandleSyncButtonClickAsync()
@@ -670,8 +679,11 @@ sealed partial class InventoryWindow
         dialog.CancelButton = closeButton;
         dialog.Load += (_, _) => Theme.Apply(dialog, currentTheme);
 
-        if (dialog.ShowDialog(this) == DialogResult.OK && syncNowRequested && savedConfig is not null)
-            await RunCloudSyncAsync(savedConfig, interactive: true);
+        if (dialog.ShowDialog(this) == DialogResult.OK && savedConfig is not null)
+        {
+            UpdateSyncTooltip(savedConfig);
+            if (syncNowRequested) await RunCloudSyncAsync(savedConfig, interactive: true);
+        }
     }
 
     async Task TryAutoSyncAfterScanAsync()
