@@ -31,14 +31,13 @@ sealed partial class InventoryWindow
     {
         if (transferringInventory || checkingUpdates) return;
         using var window = new Form { Text = "Drive Library", StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(570, 395), MinimumSize = new Size(500, 330), Font = Font, ShowInTaskbar = false };
+            ClientSize = new Size(640, 410), MinimumSize = new Size(520, 340), Font = Font, ShowInTaskbar = false };
         var list = new CheckedListBox { CheckOnClick = true, Dock = DockStyle.Fill, IntegralHeight = false,
             AccessibleName = "Drives to include in search" };
         var scanned = volumes.Where(v => v.Succeeded is not null || v.Id.StartsWith("import:", StringComparison.Ordinal)).ToList();
         foreach (var item in scanned)
         {
-            string status = item.Id.StartsWith("import:", StringComparison.Ordinal) ? "Imported" : item.Online ? "Online" : "Offline";
-            list.Items.Add($"{item.Label} ({item.Mount}) · {status}", searchDrives?.Contains(item.Id) ?? true);
+            list.Items.Add(item.DisplayLibraryLabel, searchDrives?.Contains(item.Id) ?? true);
         }
         var selectAll = new Button { Text = "Select all", AutoSize = true };
         var clearAll = new Button { Text = "Clear all", AutoSize = true };
