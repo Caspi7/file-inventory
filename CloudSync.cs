@@ -510,7 +510,13 @@ sealed partial class InventoryWindow
 
     async Task HandleSyncButtonClickAsync()
     {
-        if (syncingCloud || transferringInventory || checkingUpdates || benchmark) return;
+        if (syncingCloud)
+        {
+            syncCancellation?.Cancel();
+            state.Text = "Cancelling cloud sync…";
+            return;
+        }
+        if (transferringInventory || checkingUpdates || benchmark) return;
         var config = CloudSync.LoadConfig(catalog.DataDirectory);
         if (string.IsNullOrWhiteSpace(config.Folder))
         {
@@ -706,9 +712,9 @@ sealed partial class InventoryWindow
     {
         if (closing || syncingCloud) return;
         syncingCloud = true;
-        syncButton.Enabled = false;
+        syncButton.Enabled = true;
         syncSettingsButton.Enabled = false;
-        syncButton.Text = "Syncing…";
+        syncButton.Text = "Cancel sync";
         state.Text = "Syncing with cloud folder…";
 
         syncCancellation?.Dispose();
@@ -747,7 +753,10 @@ sealed partial class InventoryWindow
                 state.Text = $"Cloud sync complete: {summary.Exported} exported, {summary.Imported} imported.";
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            if (!closing) state.Text = "Cloud sync cancelled.";
+        }
         catch (Exception ex)
         {
             if (!closing)
@@ -762,7 +771,7 @@ sealed partial class InventoryWindow
             syncingCloud = false;
             if (!closing)
             {
-                syncButton.Text = "☁ Sync";
+                syncButton.Text = "Sync";
                 syncButton.Enabled = true;
                 syncSettingsButton.Enabled = true;
             }
