@@ -26,15 +26,6 @@ CREATE INDEX IF NOT EXISTS prefixes_file ON prefixes(file_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS fragments USING fts5(
  name_key, parent_key, content='files', content_rowid='id', tokenize='trigram case_sensitive 1'
 );
-CREATE VIRTUAL TABLE IF NOT EXISTS filename_fragments USING fts5(
- name_key, content='files', content_rowid='id', tokenize='trigram case_sensitive 1'
-);
-CREATE TRIGGER IF NOT EXISTS filename_insert AFTER INSERT ON files BEGIN
- INSERT INTO filename_fragments(rowid,name_key) VALUES(new.id,new.name_key);
-END;
-CREATE TRIGGER IF NOT EXISTS filename_delete AFTER DELETE ON files BEGIN
- INSERT INTO filename_fragments(filename_fragments,rowid,name_key) VALUES('delete',old.id,old.name_key);
-END;
 CREATE TRIGGER IF NOT EXISTS files_insert AFTER INSERT ON files BEGIN
  INSERT INTO fragments(rowid,name_key,parent_key) VALUES(new.id,new.name_key,new.parent_key);
 END;
@@ -56,7 +47,10 @@ CREATE TABLE IF NOT EXISTS moves (
  PRIMARY KEY(scan_id,file_key)
 ) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS files_parent ON files(volume,parent_key);
 CREATE TABLE IF NOT EXISTS catalog_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS files_browse ON files(volume,parent_key,(attributes & 16) DESC,name_key,rel);
+DROP INDEX IF EXISTS files_parent;
+DROP TRIGGER IF EXISTS filename_insert;
+DROP TRIGGER IF EXISTS filename_delete;
+DROP TABLE IF EXISTS filename_fragments;
