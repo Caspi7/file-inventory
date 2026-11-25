@@ -1,4 +1,4 @@
-use crate::{treemap, AppWindow, DataRow, DriveChoice, Palette, ThemeMode, Tile, TreeRow};
+use crate::{guide, treemap, AppWindow, DataRow, DriveChoice, GuideSection, Palette, ThemeMode, Tile, TreeRow};
 use file_inventory::{
     catalog::{Catalog, FileEntry, FileSort, FileSortColumn, FolderNode, SavedSearch, ScanRecord, SearchFilter, Volume},
     content::{ContentIndex, ContentMatchMode, ContentScanMode, ContentScanOptions, ContentSearchHit, ContentSearchOptions},
@@ -25,6 +25,7 @@ type ResultHandler = Box<dyn FnOnce(&mut State, &AppWindow) + Send>;
 type FolderKey = (String, String);
 
 const COMMANDS: &[(&str, &str)] = &[
+    ("Help & User Guide (F1)", "help"),
     ("Scan drives", "picker"),
     ("Deep Search · Ctrl+Shift+F", "deep"),
     ("Drive Library", "library"),
@@ -38,6 +39,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Check for Updates", "updates"),
 ];
 const MORE: &[(&str, &str)] = &[
+    ("Help & User Guide (F1)", "help"),
     ("Storage Map · Ctrl+M", "map"),
     ("Command Palette · Ctrl+K", "commands"),
     ("Export Report (HTML/CSV/JSON)…", "export"),
@@ -359,6 +361,16 @@ impl State {
                 self.map_path = tile.rel.clone();
                 self.load_map(app);
             },
+            "help" => {
+                if app.get_overlay() != "help" {
+                    self.open(app, "help", "Help & User Guide");
+                    app.set_guide_sections(model(guide::SECTIONS.iter().map(|section| GuideSection {
+                        title: section.title.into(),
+                        subtitle: section.subtitle.into(),
+                        body: section.body.into(),
+                    })));
+                }
+            }
             "commands" | "more" => {
                 self.open(app, action, if action == "more" { "More" } else { "Command Palette" });
                 self.filter_commands(app);
@@ -944,10 +956,9 @@ impl State {
             if state.deep_generation.load(Ordering::Relaxed) != generation { return; }
             match result {
                 Ok(Some((found, elapsed, stats))) => {
-                    let corrections = if found.fuzzy_corrections.is_empty() { String::new() } else { format!(" · Typo match: {}", found.fuzzy_corrections.join(", ")) };
                     app.set_deep_close_match(found.used_relaxed_match);
-                    app.set_deep_status(format!("{} matches · {} ms{} · {} indexed files · {} DB{}",
-                        found.hits.len(), elapsed.as_millis(), corrections,
+                    app.set_deep_status(format!("{} matches · {} ms · {} indexed files · {} DB{}",
+                        found.hits.len(), elapsed.as_millis(),
                         stats.indexed_files, util::format_bytes(stats.database_bytes), if found.summary.is_empty() { String::new() } else { format!(" · {}", found.summary) }).into());
                     state.hits = found.hits;
                     state.render_deep_hits(app, None);
