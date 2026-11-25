@@ -5,6 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.1
+        • Cloud Sync now saves snapshots directly as .fiinventory files (replacing legacy .finv.gz files automatically) so they appear cleanly in Explorer and Drive Library instead of showing as zip archives.
+        • Drive Library's Import dialog now accepts .fiinventory, legacy .finv.gz, and .finv.enc files.
+
         File Inventory 1.3.0
         • Command Palette (Ctrl+K) and global shortcuts.
         • Structured query syntax, saved searches, and inline match highlighting.
