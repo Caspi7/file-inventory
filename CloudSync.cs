@@ -14,7 +14,8 @@ static class CloudSync
 {
     const string ConfigFileName = "sync.json";
     const string StateFileName = "sync_state.json";
-    const string PlainExtension = ".finv.gz";
+    const string PlainExtension = ".fiinventory";
+    const string LegacyPlainExtension = ".finv.gz";
     const string EncryptedExtension = ".finv.enc";
     const string SyncSubfolderName = "FileInventorySync";
     const int SaltSize = 16;
@@ -174,6 +175,9 @@ static class CloudSync
 
                 if (File.Exists(alternatePath))
                     try { File.Delete(alternatePath); } catch (Exception) { }
+                string legacyPath = Path.Combine(config.Folder, baseName + LegacyPlainExtension);
+                if (File.Exists(legacyPath))
+                    try { File.Delete(legacyPath); } catch (Exception) { }
 
                 exported++;
             }
@@ -198,8 +202,8 @@ static class CloudSync
         var snapshotFiles = Directory.EnumerateFiles(config.Folder, "*", SearchOption.TopDirectoryOnly)
             .Where(p =>
                 p.EndsWith(PlainExtension, StringComparison.OrdinalIgnoreCase) ||
-                p.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase) ||
-                p.EndsWith(".fiinventory", StringComparison.OrdinalIgnoreCase))
+                p.EndsWith(LegacyPlainExtension, StringComparison.OrdinalIgnoreCase) ||
+                p.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         foreach (string filePath in snapshotFiles)
@@ -211,9 +215,11 @@ static class CloudSync
                 string withoutPrefix = fileName[ownPrefix.Length..];
                 string stem = withoutPrefix.EndsWith(PlainExtension, StringComparison.OrdinalIgnoreCase)
                     ? withoutPrefix[..^PlainExtension.Length]
-                    : withoutPrefix.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase)
-                        ? withoutPrefix[..^EncryptedExtension.Length]
-                        : Path.GetFileNameWithoutExtension(withoutPrefix);
+                    : withoutPrefix.EndsWith(LegacyPlainExtension, StringComparison.OrdinalIgnoreCase)
+                        ? withoutPrefix[..^LegacyPlainExtension.Length]
+                        : withoutPrefix.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase)
+                            ? withoutPrefix[..^EncryptedExtension.Length]
+                            : Path.GetFileNameWithoutExtension(withoutPrefix);
                 if (localVolumeSanitizedIds.Contains(stem))
                 {
                     skipped++;
