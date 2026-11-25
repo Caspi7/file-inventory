@@ -4,11 +4,59 @@ sealed partial class InventoryWindow
 {
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
-    const string CurrentReleaseNotes =
-        "File Inventory 1.2.13\n\n" +
-        "• Single-pass NTFS directory enumeration (NtQueryDirectoryFile + FileIdExtdDirectoryInformation) — eliminates per-file handle opens.\n" +
-        "• Multi-threaded producer/consumer scanner pipeline (2–8 parallel workers + dedicated SQLite writer via Channels).\n" +
-        "• Full Fluent / Windows 11 UI overhaul with Dark/Light mode and hybrid online/offline installer.";
+    const string FullReleaseNotes = """
+        File Inventory 1.2.14
+        • Full scrollable Release Notes history (1.1.0-preview through 1.2.14) in a themed dialog.
+
+        File Inventory 1.2.13
+        • Single-pass NTFS directory enumeration (NtQueryDirectoryFile + FileIdExtdDirectoryInformation) eliminating per-file handle opens.
+        • Multi-threaded producer/consumer scanner pipeline (2–8 parallel workers + dedicated SQLite writer via Channels).
+
+        File Inventory 1.2.12
+        • Full Fluent / Windows 11 UI overhaul: Segoe UI Variable typography, homogeneous rounded buttons, custom-painted Dark Mode for ListView headers (SysHeader32), ComboBox, DateTimePicker, ProgressBar, NumericUpDown, and dialogs.
+        • Faster catalog indexing & queries: ordered prefix B-tree publishing, 64–128 MiB SQLite cache, 256 MiB memory-mapped reads, and WAL synchronous=NORMAL.
+        • Hybrid installer: checks GitHub for newer versions on startup (with offline fallback) and lets you choose the install folder.
+
+        File Inventory 1.2.10
+        • Fixed Dark Mode rendering for ListView column headers, ComboBox dropdowns, ProgressBar, and disabled buttons.
+        • Added Accept & Install Now update dialog showing release notes before downloading and running the installer.
+
+        File Inventory 1.2.9
+        • Improved Dark/Light mode styling across ComboBox, DateTimePicker, ListView, and buttons.
+
+        File Inventory 1.2.8
+        • Modern Win11/macOS-style UI with Light/Dark mode toggle, updated logo, and in-app/updater release notes.
+
+        File Inventory 1.2.7
+        • Speed, SQLite catalog size (removed redundant files_parent index & duplicate filename_fragments FTS5 table), and single-file publish size optimizations + Elastic License 2.0 (LICENSE).
+
+        File Inventory 1.2.6 Preview
+        • Editable Extension filter dropdown with common extensions; type a custom extension or clear to search all.
+
+        File Inventory 1.2.5 Preview
+        • Added Extension column next to Filename in search results.
+
+        File Inventory 1.2.4 Preview
+        • Keyword search matches file and folder names only; unhandled exceptions save diagnostics to %LOCALAPPDATA%\FileInventory\CrashDumps.
+
+        File Inventory 1.2.3 Preview
+        • Background keyword search with loading indicator and virtualized native-scrollbar results list.
+
+        File Inventory 1.2.2 Preview
+        • Update download progress in scan bar and smaller self-contained installer.
+
+        File Inventory 1.2.1 Preview
+        • Added File Inventory archive-and-magnifier logo to window, tray, executable, and installer.
+
+        File Inventory 1.2.0 Preview
+        • Added Check for updates button checking GitHub releases with SHA-256 verification and in-place updates.
+
+        File Inventory 1.1.1 Preview
+        • Choose install location in Setup and fixed clipped scan progress text.
+
+        File Inventory 1.1.0 Preview
+        • Drive Library preview: offline drive filters, inventory import/export, and removed file tracking.
+        """;
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
@@ -18,8 +66,7 @@ sealed partial class InventoryWindow
     void InitializeUpdates()
     {
         updateButton.Enabled = !benchmark;
-        releaseNotesButton.Click += (_, _) =>
-            MessageBox.Show(this, CurrentReleaseNotes, $"File Inventory {AppUpdates.CurrentVersion.ToString(3)} Release Notes");
+        releaseNotesButton.Click += (_, _) => ShowReleaseNotesHistory();
         updateButton.Click += async (_, _) =>
         {
             if (updateCancellation is not null) updateCancellation.Cancel();
@@ -86,6 +133,56 @@ sealed partial class InventoryWindow
             }
         }
         if (UpdateInstaller is not null) Close();
+    }
+
+    void ShowReleaseNotesHistory()
+    {
+        using var dialog = new Form
+        {
+            Text = $"File Inventory {AppUpdates.CurrentVersion.ToString(3)} — Release Notes",
+            Width = 580,
+            Height = 460,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            MinimizeBox = false,
+            StartPosition = FormStartPosition.CenterParent
+        };
+        var header = new Label
+        {
+            Text = $"Release History (Current: v{AppUpdates.CurrentVersion.ToString(3)})",
+            Dock = DockStyle.Top,
+            Height = 32,
+            Padding = new Padding(12, 10, 12, 0)
+        };
+        Theme.MarkSectionTitle(header);
+        var notesBox = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            Dock = DockStyle.Fill,
+            Text = FullReleaseNotes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine),
+            SelectionStart = 0,
+            SelectionLength = 0
+        };
+        var notesPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 6, 12, 6) };
+        notesPanel.Controls.Add(notesBox);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            FlowDirection = FlowDirection.RightToLeft,
+            Height = 46,
+            Padding = new Padding(12, 6, 12, 8)
+        };
+        var close = new Button { Text = "Close", DialogResult = DialogResult.OK, AutoSize = true };
+        buttons.Controls.Add(close);
+
+        dialog.Controls.AddRange([notesPanel, header, buttons]);
+        dialog.AcceptButton = close;
+        dialog.CancelButton = close;
+        dialog.Load += (_, _) => Theme.Apply(dialog, darkMode);
+        dialog.ShowDialog(this);
     }
 
     bool ConfirmUpdate(AppUpdates.Release release)
