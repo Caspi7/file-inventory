@@ -7,6 +7,11 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.6
+        • Deep Search adds a Match selector for Smart, All keywords, Any keyword, and Exact phrase searches.
+        • Search tools insert Boolean operators, exclusions, quoted phrases, and groups to combine keywords.
+        • Typo-tolerant search finds close spellings. Smart mode ranks descriptive close matches by keyword coverage and relevance.
+
         File Inventory 1.4.5
         • Deep Search skips system and common development folders by default and uses shorter scan option labels with descriptive tooltips.
         • Content scans and repeat drive scans show percentage and estimated time remaining.
