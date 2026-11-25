@@ -55,6 +55,7 @@ struct BrowserNode {
     name: String,
     depth: usize,
     expandable: bool,
+    kind: &'static str,
 }
 
 struct State {
@@ -564,13 +565,15 @@ impl State {
         for volume in self.shown_volumes() {
             let mut stack = vec![BrowserNode {
                 key: (volume.id.clone(), String::new()), name: volume_label(volume), depth: 0, expandable: true,
+                kind: if is_imported(volume, &self.local_host) { "drive-imported" }
+                    else if volume.online { "drive-online" } else { "drive-offline" },
             }];
             while let Some(node) = stack.pop() {
                 if self.expanded.contains(&node.key) {
                     if let Some(children) = self.children.get(&node.key) {
                         stack.extend(children.iter().rev().map(|child| BrowserNode {
                             key: (volume.id.clone(), child.rel.clone()), name: child.name.clone(),
-                            depth: node.depth + 1, expandable: child.has_children,
+                            depth: node.depth + 1, expandable: child.has_children, kind: "folder",
                         }));
                     }
                 }
@@ -578,7 +581,7 @@ impl State {
             }
         }
         app.set_tree(model(tree.iter().map(|n| TreeRow {
-            title: n.name.as_str().into(), depth: n.depth as i32,
+            title: n.name.as_str().into(), depth: n.depth as i32, kind: n.kind.into(),
             marker: if !n.expandable { "" } else if self.expanded.contains(&n.key) { "▾" } else { "▸" }.into(),
         })));
         app.set_tree_selection(self.current.as_ref().and_then(|key| tree.iter().position(|n| &n.key == key)).map_or(-1, |i| i as i32));
@@ -645,7 +648,7 @@ impl State {
             let mut group = self.choices.iter().enumerate()
                 .filter(|(_, v)| is_imported(v, &self.local_host) == imported).peekable();
             if group.peek().is_none() { continue; }
-            rows.push(DriveChoice { title: header.into(), is_header: true, ..Default::default() });
+            rows.push(DriveChoice { title: header.into(), is_header: true, imported, ..Default::default() });
             self.choice_indices.push(None);
             for (index, v) in group {
                 let overdue = v.freshness_days > 0 && v.succeeded.is_none_or(|at| {
@@ -656,7 +659,7 @@ impl State {
                 let badge = if imported { format!("Imported · {}", v.host) } else { format!("Local · {status}") };
                 rows.push(DriveChoice {
                     title: title.into(), badge: badge.into(), checked: self.checked.contains(&v.id),
-                    is_header: false, imported,
+                    is_header: false, imported, online: v.online,
                 });
                 self.choice_indices.push(Some(index));
             }
@@ -940,7 +943,9 @@ impl State {
         }
         app.set_deep_rows(model(self.hits.iter().map(|hit| DataRow {
             a: hit.name.as_str().into(), b: hit.volume_label.as_str().into(), c: hit.snippet.as_str().into(),
-            d: bytes(hit.bytes).into(), e: util::format_local_time(hit.modified).into(), ..Default::default()
+            d: bytes(hit.bytes).into(), e: util::format_local_time(hit.modified).into(),
+            icon_kind: file_icon_kind(false, hit.full_path.extension().and_then(|ext| ext.to_str()).unwrap_or_default()).into(),
+            ..Default::default()
         })));
         let selection = selected_id.and_then(|id| self.hits.iter().position(|hit| hit.file_id == id));
         app.set_deep_selection(selection.map_or(-1, |i| i as i32));
@@ -1126,6 +1131,7 @@ impl State {
                     match result {
                         Ok(changes) => app.set_dialog_details(model(changes.iter().map(|c| DataRow {
                             a: match c.kind { 1 => "Added", 2 => "Modified", 3 => "Removed", 4 => "Moved", _ => "Change" }.into(),
+                            status_tone: match c.kind { 1 => "success", 2 => "warning", 3 => "danger", 4 => "imported", _ => "" }.into(),
                             b: c.old_bytes.map_or_else(String::new, bytes).into(), c: c.rel.as_str().into(),
                             d: c.new_bytes.map_or_else(String::new, bytes).into(), ..Default::default()
                         }))),
@@ -1361,12 +1367,28 @@ fn content_volume_label(v: &Volume, local_host: &str) -> String {
     if is_imported(v, local_host) { format!("{label} · {}", v.host) } else { label }
 }
 
+fn file_icon_kind(directory: bool, extension: &str) -> &'static str {
+    if directory { return "folder"; }
+    match extension.to_ascii_lowercase().as_str() {
+        "pdf" => "pdf",
+        "xlsx" | "csv" | "ods" => "sheet",
+        "docx" | "txt" | "md" => "doc",
+        "rs" | "cs" | "py" | "js" | "ts" | "json" => "code",
+        "png" | "jpg" | "jpeg" | "mp4" | "mp3" => "media",
+        "zip" | "7z" | "fiinventory" | "ficontent" => "archive",
+        _ => "file",
+    }
+}
+
 fn file_row(f: &FileEntry) -> DataRow {
+    let status = f.status();
     DataRow {
         a: f.name.as_str().into(), b: f.extension.as_str().into(), c: f.full_path().to_string_lossy().into_owned().into(),
         d: if f.label.is_empty() { f.mount.as_str() } else { f.label.as_str() }.into(),
-        e: f.status().into(), f: if f.is_directory() { "".into() } else { bytes(f.bytes).into() },
+        e: status.into(), f: if f.is_directory() { "".into() } else { bytes(f.bytes).into() },
         g: util::format_local_time(f.modified).into(),
+        icon_kind: file_icon_kind(f.is_directory(), &f.extension).into(),
+        status_tone: match status { "Online" => "success", "Removed" => "danger", _ => "warning" }.into(),
     }
 }
 
