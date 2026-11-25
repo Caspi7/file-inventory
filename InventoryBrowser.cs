@@ -9,11 +9,11 @@ sealed partial class InventoryWindow
         MaximumSize = new Size(1200, 0) };
     readonly Button browse = new() { Text = "Browse selected folder", AutoSize = true };
     readonly Button themeButton = new() { AutoSize = true };
-    readonly Button moreButton = new() { Text = "⋯ More", AutoSize = true };
+    readonly Button moreButton = new() { Text = "More", AutoSize = true };
     readonly Button duplicatesButton = new() { Text = "Duplicates", AutoSize = true };
     readonly Button changesButton = new() { Text = "Changes", AutoSize = true };
-    readonly Button savedSearchButton = new() { Text = "Saved searches ▾", AutoSize = true };
-    readonly Button saveSearchButton = new() { Text = "★", AccessibleName = "Save search", AutoSize = true };
+    readonly Button savedSearchButton = new() { Text = "Saved searches", AutoSize = true };
+    readonly Button saveSearchButton = new() { AccessibleName = "Save search", AutoSize = true };
     readonly ToolTip tips = new();
     AppTheme currentTheme = AppTheme.System;
     readonly Dictionary<int, List<Hit>> pageCache = new();
@@ -51,6 +51,18 @@ sealed partial class InventoryWindow
         InitializeLibrary();
         InitializeSync();
         InitializeUpdates();
+        Theme.SetIcon(refresh, FluentIcon.Scan);
+        Theme.SetIcon(cancel, FluentIcon.Cancel);
+        Theme.SetIcon(library, FluentIcon.Drives);
+        Theme.SetIcon(duplicatesButton, FluentIcon.Duplicates);
+        Theme.SetIcon(changesButton, FluentIcon.History);
+        Theme.SetIcon(moreButton, FluentIcon.More);
+        Theme.SetIcon(savedSearchButton, FluentIcon.Bookmark);
+        Theme.SetIcon(saveSearchButton, FluentIcon.Star);
+        Theme.SetIcon(copy, FluentIcon.Copy);
+        Theme.SetIcon(reveal, FluentIcon.FolderOpen);
+        Theme.SetIcon(candidates, FluentIcon.Duplicates);
+        Theme.SetIcon(saveSchedule, FluentIcon.Save);
         query.Width = 320;
         scanState.Dock = DockStyle.Top;
         scanState.UseMnemonic = false;
@@ -68,7 +80,7 @@ sealed partial class InventoryWindow
         toolbar.Controls.Add(CommandGroup(AnchorStyles.Right, themeButton, moreButton), 1, 0);
         InitializeMoreMenu();
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
-        themeButton.Text = CompactThemeName(currentTheme);
+        UpdateThemeButton(currentTheme);
         themeButton.Click += (_, _) => SetTheme(currentTheme switch
         {
             AppTheme.System => AppTheme.Light,
@@ -279,7 +291,7 @@ sealed partial class InventoryWindow
         return group;
     }
 
-    const string StorageMapCommand = "Storage Map (WinDirStat)…";
+    const string StorageMapCommand = "Storage Map…";
 
     void ShowStorageMap()
     {
@@ -290,7 +302,7 @@ sealed partial class InventoryWindow
     void InitializeMoreMenu()
     {
         var menu = new ContextMenuStrip();
-        ToolStripMenuItem AddCommand(Button button, string? label = null)
+        ToolStripMenuItem AddCommand(Button button, FluentIcon icon, string? label = null)
         {
             var item = new ToolStripMenuItem(label ?? button.Text, null, (_, _) => button.PerformClick());
             menu.Opening += (_, _) =>
@@ -298,6 +310,7 @@ sealed partial class InventoryWindow
                 item.Text = label ?? button.Text;
                 item.Enabled = button.Enabled;
             };
+            Theme.SetMenuIcon(menu, item, icon);
             if (button.Parent is null)
                 FormClosed += (_, _) => button.Dispose();
             return item;
@@ -315,18 +328,23 @@ sealed partial class InventoryWindow
             autoCheck.Checked = AutoCheckUpdates;
         };
 
+        var storageMap = new ToolStripMenuItem(StorageMapCommand, null, (_, _) => ShowStorageMap())
+            { ShortcutKeyDisplayString = "Ctrl+M" };
+        var commandPalette = new ToolStripMenuItem("Command Palette (Ctrl+K)", null, (_, _) => ShowCommandPalette());
+        Theme.SetMenuIcon(menu, storageMap, FluentIcon.StorageMap);
+        Theme.SetMenuIcon(menu, commandPalette, FluentIcon.Search);
+        // The auto-check command uses the standard check mark to show its toggle state.
         menu.Items.AddRange([
-            AddCommand(browse),
-            AddCommand(searchDrive),
-            new ToolStripMenuItem(StorageMapCommand, null, (_, _) => ShowStorageMap())
-                { ShortcutKeyDisplayString = "Ctrl+M" },
+            AddCommand(browse, FluentIcon.FolderOpen),
+            AddCommand(searchDrive, FluentIcon.Search),
+            storageMap,
             new ToolStripSeparator(),
-            AddCommand(syncSettingsButton, "Sync settings…"),
-            new ToolStripMenuItem("Command Palette (Ctrl+K)", null, (_, _) => ShowCommandPalette()),
+            AddCommand(syncSettingsButton, FluentIcon.Settings, "Sync settings…"),
+            commandPalette,
             new ToolStripSeparator(),
-            AddCommand(updateButton),
+            AddCommand(updateButton, FluentIcon.Update),
             autoCheck,
-            AddCommand(releaseNotesButton)
+            AddCommand(releaseNotesButton, FluentIcon.Notes)
         ]);
         moreButton.Click += (_, _) => menu.Show(moreButton, new Point(0, moreButton.Height));
         FormClosed += (_, _) => menu.Dispose();
@@ -334,18 +352,22 @@ sealed partial class InventoryWindow
 
     static string ThemeName(AppTheme theme) => theme == AppTheme.DarkBlue ? "Dark Blue" : theme.ToString();
 
-    static string CompactThemeName(AppTheme theme) => theme switch
+    void UpdateThemeButton(AppTheme theme)
     {
-        AppTheme.Light => "☀ Light",
-        AppTheme.Dark => "☾ Dark",
-        AppTheme.DarkBlue => "☾ Blue",
-        _ => "◐ System"
-    };
+        themeButton.Text = ThemeName(theme);
+        Theme.SetIcon(themeButton, theme switch
+        {
+            AppTheme.Light => FluentIcon.ThemeLight,
+            AppTheme.Dark => FluentIcon.ThemeDark,
+            AppTheme.DarkBlue => FluentIcon.ThemeBlue,
+            _ => FluentIcon.ThemeSystem
+        });
+    }
 
     void SetTheme(AppTheme theme)
     {
         currentTheme = theme;
-        themeButton.Text = CompactThemeName(theme);
+        UpdateThemeButton(theme);
         Theme.SavePreference(catalog.DataDirectory, theme);
         Theme.Apply(this, theme);
         Theme.StyleToolTip(tips);
