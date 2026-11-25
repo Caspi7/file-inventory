@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.5 · Benchmark" : "File Inventory 1.3.5";
+        Text = benchmark ? "File Inventory 1.3.6 · Benchmark" : "File Inventory 1.3.6";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -389,7 +389,7 @@ sealed partial class InventoryWindow : Form
 
     async Task Poll()
     {
-        if (discovering || closing) return;
+        if (discovering || closing || syncingCloud || transferringInventory) return;
         discovering = true;
         try
         {
