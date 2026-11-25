@@ -61,6 +61,12 @@ export component DialogBody inherits VerticalLayout {
                     tone: drive.imported ? "imported" : drive.online ? "success" : "warning";
                     dot: !drive.imported && drive.online;
                 }
+                if root.mode == "library" || root.mode == "scope" : Action {
+                    icon: "M3 4H13 M6 4V2H10V4 M4 4L5 14H11L12 4 M7 7V11 M9 7V11";
+                    tone: "danger";
+                    enabled: !root.busy;
+                    clicked => { root.action("drive-remove-row", i); }
+                }
             }
         }
     }
@@ -83,7 +89,7 @@ export component DialogBody inherits VerticalLayout {
             spacing: 8px;
             Action { label: "Import…"; enabled: !root.busy; clicked => { root.action("drive-import", 0); } }
             Action { label: "Export…"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-export", 0); } }
-            Action { label: "Remove offline drive"; tone: "danger"; icon: "M3 4H13 M6 4V2H10V4 M4 4L5 14H11L12 4 M7 7V11 M9 7V11"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-remove", 0); } }
+            Action { label: "Remove drive"; tone: "danger"; icon: "M3 4H13 M6 4V2H10V4 M4 4L5 14H11L12 4 M7 7V11 M9 7V11"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-remove", 0); } }
             Rectangle { horizontal-stretch: 1; }
         }
     }
