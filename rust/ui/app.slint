@@ -1,0 +1,255 @@
+import { LineEdit, ComboBox, CheckBox, ListView, Palette as WidgetPalette } from "std-widgets.slint";
+import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile } from "controls.slint";
+import { DeepSearch } from "deep_search.slint";
+import { DialogBody, DriveChoice } from "dialogs.slint";
+import { Palette, ThemeMode } from "theme.slint";
+export { Palette, ThemeMode }
+
+export component AppWindow inherits Window {
+    title: "File Inventory 1.5.0";
+    preferred-width: 1360px; preferred-height: 800px;
+    min-width: 1130px; min-height: 635px;
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+    background: Palette.bg;
+    in-out property <string> scope-label: "All drives";
+    in-out property <string> theme-label;
+    in-out property <string> hint;
+    in-out property <string> status: "Ready";
+    in-out property <float> progress;
+    in-out property <bool> busy;
+    in-out property <bool> syncing;
+    in-out property <[TreeRow]> tree;
+    in-out property <int> tree-selection: -1;
+    in-out property <[DataRow]> rows;
+    in-out property <int> selection: -1;
+    in-out property <string> query;
+    in-out property <string> extension;
+    in-out property <string> minimum;
+    in-out property <string> maximum;
+    in-out property <int> online: 0;
+    in-out property <bool> removed;
+    in-out property <[string]> saved;
+    in-out property <int> saved-index: -1;
+    in-out property <string> path;
+    in-out property <bool> schedule;
+    in-out property <string> hours;
+    in-out property <string> volume-details;
+    in-out property <bool> has-volume;
+    in-out property <string> tags;
+    in-out property <string> note;
+    in-out property <string> result-status;
+    in-out property <bool> page-back;
+    in-out property <bool> page-next;
+    in-out property <bool> page-busy;
+    in-out property <string> overlay;
+    in-out property <string> dialog-title;
+    in-out property <string> dialog-status;
+    in-out property <string> dialog-field;
+    in-out property <string> dialog-second;
+    in-out property <bool> dialog-flag;
+    in-out property <bool> dialog-second-flag;
+    in-out property <[DataRow]> dialog-rows;
+    in-out property <[DataRow]> dialog-details;
+    in-out property <[DriveChoice]> choices;
+    in-out property <int> dialog-selection: -1;
+    in-out property <int> detail-selection: -1;
+    in-out property <[string]> dialog-drives;
+    in-out property <int> map-drive: 0;
+    in-out property <[Tile]> tiles;
+    in-out property <int> report-format: 0;
+    in-out property <[string]> deep-drives;
+    in-out property <[DataRow]> deep-rows;
+    in-out property <string> deep-status;
+    in-out property <bool> deep-close-match;
+    in-out property <string> deep-estimate;
+    in-out property <string> deep-progress-text;
+    in-out property <float> deep-progress;
+    in-out property <string> deep-query;
+    in-out property <string> deep-extension;
+    in-out property <int> deep-drive: 0;
+    in-out property <int> scan-drive: 0;
+    in-out property <int> match-mode: 0;
+    in-out property <int> resource-mode: 0;
+    in-out property <bool> fuzzy: true;
+    in-out property <bool> text-files: true;
+    in-out property <bool> office: true;
+    in-out property <bool> pdf: true;
+    in-out property <bool> excerpts: true;
+    in-out property <bool> skip-system: true;
+    in-out property <int> deep-selection: -1;
+    callback action(string, int);
+    init => { WidgetPalette.color-scheme = Palette.dark ? ColorScheme.dark : ColorScheme.light; }
+    forward-focus: shortcuts;
+    shortcuts := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape && root.overlay != "" { root.action("close", 0); return accept; }
+            if event.modifiers.control {
+                if event.text == "k" || event.text == "K" { root.action("commands", 0); return accept; }
+                if event.text == "m" || event.text == "M" { root.action("map", 0); return accept; }
+                if event.modifiers.shift && (event.text == "f" || event.text == "F") { root.action("deep", 0); return accept; }
+            }
+            return reject;
+        }
+        VerticalLayout {
+            Rectangle {
+                height: 46px; background: Palette.header-bg;
+                Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; }
+                HorizontalLayout {
+                    y: 10px; height: 36px; padding-left: 10px; padding-right: 10px; spacing: 4px;
+                    tab-scope := Action { tab: true; label: root.scope-label; icon: "M2 3H14V11H2Z M5 13H11 M6 6L8 8L10 6"; clicked => { root.action("scope", 0); } }
+                    tab-picker := Action { tab: true; label: "Scan drives"; icon: "M2 4H14V12H2Z M4 9H11 M11 6H12"; enabled: !root.busy; primary: true; clicked => { root.action("picker", 0); } }
+                    tab-cancel := Action { tab: true; label: "Cancel"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel", 0); } }
+                    tab-sync := Action { tab: true; label: root.syncing ? "Cancel sync" : "Sync"; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy || root.syncing; clicked => { root.action("sync", 0); } }
+                    tab-sync-settings := Action { tab: true; label: ""; icon: "M8 1V4 M8 12V15 M1 8H4 M12 8H15 M3 3L5 5 M11 11L13 13 M3 13L5 11 M11 5L13 3 M8 4A4 4 0 1 0 8 12A4 4 0 1 0 8 4"; clicked => { root.action("sync-settings", 0); } }
+                    tab-library := Action { tab: true; label: "Drives"; icon: "M2 3H14V7H2Z M2 9H14V13H2Z M11 5H12 M11 11H12"; clicked => { root.action("library", 0); } }
+                    tab-duplicates := Action { tab: true; label: "Duplicates"; icon: "M2 2H10V10H2Z M6 11V14H14V6H11"; clicked => { root.action("duplicates", 0); } }
+                    tab-changes := Action { tab: true; label: "Changes"; icon: "M3 2H13V14H3Z M5 5H11 M5 8H11 M5 11H9"; clicked => { root.action("changes", 0); } }
+                    tab-deep := Action { tab: true; label: "Deep Search"; icon: "M11 7A4 4 0 1 0 3 7A4 4 0 1 0 11 7 M10 10L14 14"; clicked => { root.action("deep", 0); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    tab-theme := Action { tab: true; label: root.theme-label; icon: "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2"; clicked => { root.action("theme", 0); } }
+                    tab-more := Action { tab: true; label: "More"; icon: "M2 8H4 M7 8H9 M12 8H14"; clicked => { root.action("more", 0); } }
+                }
+            }
+            HorizontalLayout {
+                height: 31px; padding-left: 12px; padding-right: 12px; spacing: 10px;
+                Meter { width: 138px; value: root.progress; }
+                Label { text: root.status; color: Palette.muted; horizontal-stretch: 1; }
+            }
+            HorizontalLayout {
+                vertical-stretch: 1; spacing: 8px; padding: 8px; padding-top: 0;
+                Rectangle {
+                    width: 270px; border-radius: 6px; border-width: 1px; border-color: Palette.border; background: Palette.surface;
+                    VerticalLayout {
+                        padding: 9px; spacing: 7px;
+                        Label { text: "Folders and files"; height: 23px; font-weight: 650; }
+                        ListView {
+                            vertical-stretch: 1;
+                            for row[i] in root.tree : Rectangle {
+                                height: 29px; border-radius: 4px;
+                                background: i == root.tree-selection ? Palette.accent : tree-hit.has-hover ? Palette.surface-hover : Palette.surface;
+                                Label { x: row.depth * 15px + 7px; width: 18px; text: row.marker; color: i == root.tree-selection ? white : Palette.muted; }
+                                Label { x: row.depth * 15px + 27px; width: parent.width - self.x - 4px; text: row.title; color: i == root.tree-selection ? white : Palette.fg; }
+                                tree-hit := TouchArea { clicked => { root.action(self.mouse-x < row.depth * 15px + 26px ? "tree-toggle" : "tree-select", i); } }
+                            }
+                        }
+                        CheckBox { text: "Schedule refresh"; checked <=> root.schedule; enabled: root.has-volume; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            LineEdit { placeholder-text: "Hours"; text <=> root.hours; enabled: root.has-volume; horizontal-stretch: 1; }
+                            Label { text: "hours"; }
+                            Action { label: "Save schedule"; enabled: root.has-volume; clicked => { root.action("schedule", 0); } }
+                        }
+                        Rectangle {
+                            height: 146px; border-radius: 5px; background: Palette.surface-readonly; border-width: 1px; border-color: Palette.border;
+                            Text { x: 8px; y: 6px; width: parent.width - 16px; height: parent.height - 12px; text: root.volume-details; color: Palette.muted; wrap: word-wrap; overflow: elide; }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1; background: Palette.surface; border-radius: 6px; border-width: 1px; border-color: Palette.border;
+                    VerticalLayout {
+                        padding: 8px; spacing: 7px;
+                        HorizontalLayout {
+                            spacing: 7px;
+                            LineEdit { placeholder-text: "Search filenames and folders"; text <=> root.query; horizontal-stretch: 1; edited => { root.action("search", 0); } accepted => { root.action("search-now", 0); } }
+                            ComboBox { model: ["Any status", "Online", "Offline"]; current-index <=> root.online; width: 108px; selected => { root.action("search", 0); } }
+                            LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 83px; edited => { root.action("search", 0); } }
+                            LineEdit { placeholder-text: "Min bytes"; text <=> root.minimum; width: 82px; edited => { root.action("search", 0); } }
+                            LineEdit { placeholder-text: "Max bytes"; text <=> root.maximum; width: 82px; edited => { root.action("search", 0); } }
+                            CheckBox { text: "Show removed files"; checked <=> root.removed; toggled => { root.action("search", 0); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 7px;
+                            Action { label: "Up"; enabled: root.has-volume; icon: "M3 8L8 3L13 8 M8 3V14"; clicked => { root.action("up", 0); } }
+                            Label { text: root.path; horizontal-stretch: 1; color: Palette.muted; }
+                            ComboBox { model: root.saved; current-index <=> root.saved-index; width: 157px; selected => { root.action("saved", self.current-index); } }
+                            Action { label: "Save"; icon: "M8 1L10 6L15 6L11 9L13 14L8 11L3 14L5 9L1 6L6 6Z"; clicked => { root.action("save-search", 0); } }
+                        }
+                        Grid {
+                            vertical-stretch: 1; rows: root.rows; selection <=> root.selection;
+                            headers: { a: "Filename", b: "Extension", c: "Full path", d: "Volume", e: "Status", f: "Size", g: "Modified" };
+                            selected(i) => { root.action("file-select", i); }
+                            activated(i) => { root.action("file-open", i); }
+                        }
+                        HorizontalLayout {
+                            spacing: 7px;
+                            Action { label: "Copy path"; icon: "M2 2H10V10H2Z M6 11V14H14V6H11"; enabled: root.selection >= 0; clicked => { root.action("copy", 0); } }
+                            Action { label: "Reveal in Explorer"; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("reveal", 0); } }
+                            Action { label: "Find possible copies"; enabled: root.selection >= 0; clicked => { root.action("copies", 0); } }
+                            Label { text: root.result-status; color: Palette.muted; horizontal-stretch: 1; horizontal-alignment: right; }
+                            if root.page-back || root.page-next : Action { label: "‹"; enabled: root.page-back && !root.page-busy; clicked => { root.action("page-back", 0); } }
+                            if root.page-back || root.page-next : Action { label: "›"; enabled: root.page-next && !root.page-busy; clicked => { root.action("page-next", 0); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 7px;
+                            LineEdit { placeholder-text: "Tags"; text <=> root.tags; enabled: root.selection >= 0; horizontal-stretch: 1; }
+                            LineEdit { placeholder-text: "Note"; text <=> root.note; enabled: root.selection >= 0; horizontal-stretch: 2; }
+                            Action { label: "Save"; enabled: root.selection >= 0; clicked => { root.action("annotation", 0); } }
+                        }
+                    }
+                }
+            }
+        }
+        if root.overlay == "" && root.hint != "" : Rectangle {
+            x: 12px; y: 75px; width: tooltip.preferred-width + 22px; height: 27px;
+            background: Palette.surface; border-color: Palette.border-strong; border-width: 1px; border-radius: 6px;
+            tooltip := Label { x: 11px; text: root.hint; }
+        }
+        if root.overlay != "" : Rectangle {
+            background: root.overlay == "more" || root.overlay == "scope" ? transparent : #0008;
+            TouchArea { clicked => { if root.overlay == "more" || root.overlay == "scope" { root.action("close", 0); } } }
+            modal := Rectangle {
+                property <bool> small: root.overlay == "sync-settings" || root.overlay == "save-search" || root.overlay == "export" || root.overlay == "remove" || root.overlay == "import-password";
+                width: root.overlay == "more" || root.overlay == "scope" ? 335px : min(parent.width - 36px, root.overlay == "deep" ? 1140px : small ? 650px : 940px);
+                height: root.overlay == "more" ? 255px : root.overlay == "scope" ? min(parent.height - 58px, 360px) : small ? min(parent.height - 36px, root.overlay == "sync-settings" ? 400px : 205px) : min(parent.height - 36px, 680px);
+                x: root.overlay == "more" ? parent.width - self.width - 10px : root.overlay == "scope" ? 10px : (parent.width - self.width) / 2; y: root.overlay == "more" || root.overlay == "scope" ? 46px : (parent.height - self.height) / 2;
+                background: Palette.surface; border-radius: 9px; border-width: 1px; border-color: Palette.border-strong;
+                VerticalLayout {
+                    padding: 15px; spacing: 10px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Label { text: root.dialog-title; font-size: 21px; font-weight: 650; horizontal-stretch: 1; }
+                        if root.busy && root.overlay != "deep" && root.overlay != "scope" && root.overlay != "more" : Action {
+                            label: "Cancel operation"; clicked => { root.action("cancel", 0); }
+                        }
+                        Action { label: "Close"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close", 0); } }
+                    }
+                    if root.overlay == "deep" : DeepSearch {
+                        vertical-stretch: 1;
+                        drives: root.deep-drives;
+                        rows: root.deep-rows;
+                        status: root.deep-status;
+                        close-match: root.deep-close-match;
+                        estimate: root.deep-estimate;
+                        progress-text: root.deep-progress-text;
+                        progress: root.deep-progress;
+                        busy: root.busy;
+                        query <=> root.deep-query;
+                        extension <=> root.deep-extension;
+                        drive <=> root.deep-drive;
+                        scan-drive <=> root.scan-drive;
+                        match-mode <=> root.match-mode;
+                        resource-mode <=> root.resource-mode;
+                        fuzzy <=> root.fuzzy;
+                        text-files <=> root.text-files;
+                        office <=> root.office;
+                        pdf <=> root.pdf;
+                        excerpts <=> root.excerpts;
+                        skip-system <=> root.skip-system;
+                        selection <=> root.deep-selection;
+                        action(name) => { root.action(name, 0); }
+                    }
+                    if root.overlay != "deep" : DialogBody {
+                        vertical-stretch: 1; mode: root.overlay; choices: root.choices; rows: root.dialog-rows; details: root.dialog-details;
+                        tiles: root.tiles; drives: root.dialog-drives; status: root.dialog-status; busy: root.busy;
+                        selection <=> root.dialog-selection; detail-selection <=> root.detail-selection; map-drive <=> root.map-drive; format <=> root.report-format;
+                        field <=> root.dialog-field; second <=> root.dialog-second; flag <=> root.dialog-flag; second-flag <=> root.dialog-second-flag;
+                        action(name, index) => { root.action(name, index); }
+                    }
+                }
+            }
+        }
+    }
+    hint: tab-scope.hovered ? "Choose the drives shown in the catalog" : tab-picker.hovered ? "Choose online drives to refresh" : tab-cancel.hovered ? "Cancel the current background operation" : tab-sync.hovered ? "Exchange snapshots with the configured cloud folder" : tab-sync-settings.hovered ? "Sync settings" : tab-library.hovered ? "Manage online and offline inventories" : tab-duplicates.hovered ? "Compare possible copies across drives" : tab-changes.hovered ? "Review scan history and file changes" : tab-deep.hovered ? "Search inside indexed files (Ctrl+Shift+F)" : tab-theme.hovered ? "Switch color theme" : tab-more.hovered ? "Storage map, commands, reports, and updates" : "";
+}
