@@ -193,6 +193,94 @@ fn pdf_file(path:&Path) {
 }
 
 #[test]
+fn smart_content_queries_infer_english_and_dutch_exclusions() {
+    let fixture = Fixture::new();
+    let catalog = fixture.catalog("catalog");
+    let volume = fixture.volume("drive");
+    for (name, body) in [
+        ("english.txt", "invoice 2025"),
+        ("draft.txt", "invoice 2025 draft"),
+        ("dutch.txt", "factuur 2025"),
+        ("concept.txt", "factuur 2025 concept"),
+    ] {
+        fs::write(Path::new(&volume.mount).join(name), body).unwrap();
+    }
+    scan(&catalog, &volume);
+    let index = ContentIndex::new(catalog);
+    index.scan(&ContentScanOptions::default(), cancel(), |_| {}).unwrap();
+    for (query, allowed, excluded, cue) in [
+        ("invoice 2025 without draft", "english.txt", "draft.txt", "draft"),
+        ("factuur 2025 zonder concept", "dutch.txt", "concept.txt", "concept"),
+    ] {
+        let results = index.search(query, None, None, 20, &ContentSearchOptions::default()).unwrap();
+        assert_eq!(results.hits[0].name, allowed);
+        assert!(results.hits.iter().all(|hit| hit.name != excluded));
+        assert!(results.summary.contains(&format!("Excluded: {cue}")));
+    }
+}
+
+#[test]
+fn smart_slash_alternatives_count_as_one_keyword_group() {
+    let fixture = Fixture::new();
+    let catalog = fixture.catalog("catalog");
+    let volume = fixture.volume("drive");
+    for (name, body) in [
+        ("invoice.txt", "invoice 2025"),
+        ("receipt.txt", "receipt 2025"),
+        ("previous.txt", "invoice receipt 2024"),
+    ] {
+        fs::write(Path::new(&volume.mount).join(name), body).unwrap();
+    }
+    scan(&catalog, &volume);
+    let index = ContentIndex::new(catalog);
+    index.scan(&ContentScanOptions::default(), cancel(), |_| {}).unwrap();
+    let results = index.search("invoice/receipt 2025", None, None, 20, &ContentSearchOptions::default()).unwrap();
+    let mut names = results.hits[..2].iter().map(|hit| hit.name.as_str()).collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["invoice.txt", "receipt.txt"]);
+    assert_eq!(results.hits[2].name, "previous.txt");
+    assert!(results.summary.contains("2 exact, 1 close"));
+}
+
+#[test]
+fn smart_ranking_blends_coverage_tiers_and_uses_adjacency_and_filenames() {
+    let fixture = Fixture::new();
+    let catalog = fixture.catalog("catalog");
+    let volume = fixture.volume("drive");
+    for (name, body) in [
+        ("complete.txt", "quarterly tax invoice accountant"),
+        ("almost.txt", "quarterly tax invoice"),
+        ("adjacent.txt", "quarterly tax"),
+        ("scattered.txt", "quarterly report tax"),
+        ("generic.txt", "accountant"),
+        ("accountant.txt", "accountant"),
+        ("single.txt", "tax"),
+    ] {
+        fs::write(Path::new(&volume.mount).join(name), body).unwrap();
+    }
+    scan(&catalog, &volume);
+    let index = ContentIndex::new(catalog);
+    index.scan(&ContentScanOptions::default(), cancel(), |_| {}).unwrap();
+    let query = |input| index.search(input, None, None, 20, &ContentSearchOptions::default()).unwrap();
+    let results = query("quarterly tax invoice accountant");
+    let names = results.hits.iter().map(|hit| hit.name.as_str()).collect::<Vec<_>>();
+    assert_eq!(&names[..4], ["complete.txt", "almost.txt", "adjacent.txt", "scattered.txt"]);
+    assert_eq!(names.len(), 7);
+    assert!(names.iter().position(|name| *name == "accountant.txt") <
+        names.iter().position(|name| *name == "generic.txt"));
+    assert!(results.summary.contains("1 exact, 6 close"));
+    let blended = query("quarterly tax");
+    assert_eq!(blended.hits.last().unwrap().name, "single.txt");
+    assert!(blended.summary.contains("4 exact, 1 close"));
+    let explicit = query("quarterly AND tax");
+    assert_eq!(explicit.hits.len(), 4);
+    assert!(!explicit.used_relaxed_match);
+    let typo = query("zoek mijn bestanden quarterly tax invoce accountant");
+    assert_eq!(typo.hits[0].name, "complete.txt");
+    assert!(typo.summary.contains("Typo: invoce"));
+}
+
+#[test]
 fn content_formats_boolean_fuzzy_ranking_and_ficontent() {
     let fixture=Fixture::new();
     let catalog=fixture.catalog("catalog");
