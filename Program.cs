@@ -497,8 +497,8 @@ sealed partial class InventoryWindow : Form
         };
         var selectAll = new Button { Text = "Select all", AutoSize = true };
         var selectNone = new Button { Text = "Select none", AutoSize = true };
-        selectAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, true); };
-        selectNone.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, false); };
+        selectAll.Click += (_, _) => UiHelpers.SetAllChecked(list, true);
+        selectNone.Click += (_, _) => UiHelpers.SetAllChecked(list, false);
         quick.Controls.AddRange([selectAll, selectNone]);
 
         var buttons = new FlowLayoutPanel
