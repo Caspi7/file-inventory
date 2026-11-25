@@ -617,8 +617,19 @@ static class Theme
             default:
                 if (c.IsHandleCreated)
                     _ = SetWindowTheme(c.Handle, dark ? "DarkMode_Explorer" : "Explorer", null);
-                c.BackColor = current.Bg;
+                bool isCommandBar = Equals(c.Tag, "command-bar");
+                bool isCommandBarGroup = Equals(c.Tag, "command-bar-group");
+                c.BackColor = (isCommandBar || isCommandBarGroup) ? current.HeaderBg : current.Bg;
                 c.ForeColor = current.Fg;
+                if (isCommandBar && !hooked.TryGetValue(c, out _))
+                {
+                    hooked.Add(c, new object());
+                    c.Paint += (_, e) =>
+                    {
+                        using var pen = new Pen(current.Border, 1f);
+                        e.Graphics.DrawLine(pen, 0, c.Height - 1, c.Width, c.Height - 1);
+                    };
+                }
                 break;
         }
 
