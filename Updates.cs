@@ -7,6 +7,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.4
+        • Browse drive shows the drives checked in Drive Library.
+        • Cloud Sync settings are available beside Sync, and the Sync tooltip shows the configured folder.
+
         File Inventory 1.3.3
         • Interactive Storage Map for online and offline drive inventories (Ctrl+M).
         • Optional automatic update checks on startup.
