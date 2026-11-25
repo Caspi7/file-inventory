@@ -81,12 +81,11 @@ sealed class Scanner(Catalog catalog)
             {
                 // This scratch database is discarded on interruption. The live catalog
                 // still uses its normal durable transaction when publishing the snapshot.
-                Catalog.Execute(stage, "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=OFF;");
+                Catalog.Execute(stage, "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=OFF; PRAGMA locking_mode=EXCLUSIVE; PRAGMA cache_size=-131072;");
                 Catalog.Execute(stage, """
                     CREATE TABLE entries(rel TEXT PRIMARY KEY,name TEXT,name_key TEXT,parent_key TEXT,
                      extension TEXT,bytes INTEGER,modified INTEGER,created INTEGER,attributes INTEGER,
                      file_key TEXT,tokens TEXT NOT NULL) WITHOUT ROWID;
-                    CREATE VIEW prefixes AS SELECT j.value AS token,e.rel FROM entries e JOIN json_each(e.tokens) j;
                     CREATE TABLE coverage(directory TEXT PRIMARY KEY,complete INTEGER,detail TEXT) WITHOUT ROWID;
                     CREATE INDEX coverage_status ON coverage(complete,directory);
                     BEGIN IMMEDIATE;
@@ -195,6 +194,7 @@ sealed class Scanner(Catalog catalog)
             CheckMount(volume);
             token.ThrowIfCancellationRequested();
             Report(volume.Mount, "Saving catalog");
+            Catalog.Execute(db, "PRAGMA temp_store=FILE; PRAGMA main.cache_size=-65536;");
             var finished = Catalog.Now();
             outcome = omitted == 0 ? "Complete" : "Complete with omissions";
             Catalog.Execute(db, "ATTACH DATABASE $path AS pending; BEGIN IMMEDIATE;",
