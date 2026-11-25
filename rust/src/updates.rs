@@ -13,8 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.5.4";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.5.4
+pub const APP_VERSION: &str = "1.5.5";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.5.5
+- Added 1-click drive removal (trash icon on every drive row in Drive Scope and Drive Library, plus Remove drive button) supporting offline, imported, and online drives, and cleaning up Deep Search content and selected drives.
+
+File Inventory 1.5.4
 - Fixed console/terminal window appearing behind File Inventory on Windows startup (restored GUI windows_subsystem).
 
 File Inventory 1.5.3
