@@ -30,6 +30,12 @@ sealed class DuplicatesDialog : Form
     {
         this.catalog = catalog;
         Text = "Duplicates";
+        Theme.SetIcon(find, FluentIcon.Search);
+        Theme.SetIcon(verify, FluentIcon.Check);
+        Theme.SetIcon(cancel, FluentIcon.Cancel);
+        Theme.SetIcon(copy, FluentIcon.Copy);
+        Theme.SetIcon(reveal, FluentIcon.FolderOpen);
+        Theme.SetIcon(export, FluentIcon.Export);
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(960, 590);
         MinimumSize = new Size(740, 460);
