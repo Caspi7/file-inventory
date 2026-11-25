@@ -88,6 +88,20 @@ sealed partial class ContentIndex(Catalog catalog)
         }
     }
 
+    static void OptimizeIndex(SqliteConnection db)
+    {
+        Run("INSERT INTO main.content_fts(content_fts) VALUES('optimize');");
+        Run("PRAGMA main.incremental_vacuum;");
+        Run("PRAGMA main.optimize;");
+
+        void Run(string sql)
+        {
+            // Maintenance is best effort after the data has already been committed.
+            try { Catalog.Execute(db, sql); }
+            catch (SqliteException ex) { Trace.TraceWarning("Content index maintenance ({0}): {1}", sql, ex.Message); }
+        }
+    }
+
     static void AttachCatalog(SqliteConnection db, Catalog catalog) =>
         Catalog.Execute(db, "ATTACH DATABASE $path AS source_catalog;",
             ("path", Path.Combine(catalog.DataDirectory, "catalog.sqlite3")));
@@ -220,6 +234,7 @@ sealed partial class ContentIndex(Catalog catalog)
             if (options.Mode == ContentScanMode.Turbo) Catalog.Execute(db, "PRAGMA cache_size=-131072;");
             int batchSize = options.Mode == ContentScanMode.Turbo ? 1000 : 250;
             long processed = 0, indexed = 0, skipped = 0, failed = 0;
+            bool wroteContent = false;
             var batch = new List<Result>(batchSize);
             await foreach (var result in output.Reader.ReadAllAsync(token).ConfigureAwait(false))
             {
@@ -229,7 +244,7 @@ sealed partial class ContentIndex(Catalog catalog)
             token.ThrowIfCancellationRequested();
             if (batch.Count > 0) Flush();
             if (processed == 0) progress?.Report(new(0, total, 0, 0, 0, ""));
-            Catalog.Execute(db, "PRAGMA optimize;");
+            if (wroteContent) OptimizeIndex(db);
 
             void Flush()
             {
@@ -248,6 +263,7 @@ sealed partial class ContentIndex(Catalog catalog)
                             hasText ? Encoding.UTF8.GetByteCount(body) : 0, options.MaxTextChars);
                     }
                     transaction.Commit();
+                    wroteContent = true;
                 }
                 foreach (var result in batch)
                 {
@@ -1205,6 +1221,7 @@ sealed partial class ContentIndex(Catalog catalog)
         }
         if (brotli.ReadByte() != -1) throw new InvalidDataException("Unexpected content archive data.");
         transaction.Commit();
+        if (imported > 0) OptimizeIndex(db);
         return imported;
     }
 
