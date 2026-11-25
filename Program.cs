@@ -57,6 +57,7 @@ sealed partial class InventoryWindow : Form
 {
     readonly Catalog catalog;
     readonly bool benchmark;
+    readonly SavedSearches savedSearches;
     readonly Scanner scanner;
     readonly TextBox query = new() { Width = 310, MaxLength = 500, PlaceholderText = "Search filenames and folders" };
     readonly ComboBox extension = new() { Width = 105, DropDownStyle = ComboBoxStyle.DropDown,
@@ -101,6 +102,7 @@ sealed partial class InventoryWindow : Form
     bool restoring, discovering, closing, readyToClose;
     int revision;
     bool savingSchedule;
+    string idleSearchStatus = "", displayedIdleStatus = "";
     string? selectedId, displayedSchedule;
     (bool? Enabled, double? Hours) scheduleVersion;
 
@@ -110,8 +112,9 @@ sealed partial class InventoryWindow : Form
     {
         this.catalog = catalog;
         this.benchmark = benchmark;
+        savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.20 · Benchmark" : "File Inventory 1.2.20";
+        Text = benchmark ? "File Inventory 1.3.0 · Benchmark" : "File Inventory 1.3.0";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -227,6 +230,57 @@ sealed partial class InventoryWindow : Form
         ShowActions();
     }
 
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        switch (keyData)
+        {
+            case Keys.Control | Keys.K:
+                CommandPalette.Show(this, currentTheme, BuildCommandPaletteActions());
+                return true;
+            case Keys.Control | Keys.F:
+            case Keys.Control | Keys.L:
+                query.Focus();
+                query.SelectAll();
+                return true;
+            case Keys.F5:
+                refresh.PerformClick();
+                return true;
+            case Keys.Control | Keys.D:
+                library.PerformClick();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.S:
+                syncButton.PerformClick();
+                return true;
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+
+    IReadOnlyList<CommandAction> BuildCommandPaletteActions()
+    {
+        List<CommandAction> actions =
+        [
+            new("Scan drives…", "Inventory", "F5", refresh.PerformClick),
+            new("Sync now", "Sync", "Ctrl+Shift+S", syncButton.PerformClick),
+            new("Sync settings…", "Sync", "", syncSettingsButton.PerformClick),
+            new("Drive Library…", "Inventory", "Ctrl+D", library.PerformClick),
+            new("Duplicates…", "Inventory", "", duplicatesButton.PerformClick),
+            new("Changes…", "Inventory", "", changesButton.PerformClick),
+            new("Saved searches", "Search", "", savedSearchButton.PerformClick),
+            new("Check for updates", "Application", "", updateButton.PerformClick),
+            new("Release notes", "Application", "", releaseNotesButton.PerformClick)
+        ];
+        foreach (var theme in Enum.GetValues<AppTheme>())
+            actions.Add(new($"Theme: {ThemeName(theme)}", "Appearance", "", () => SetTheme(theme)));
+        foreach (var choice in scope.Items.Cast<Choice>())
+            actions.Add(new($"Browse {choice.Text}", "Drives", "", () =>
+            {
+                if (scope.Items.Cast<Choice>().FirstOrDefault(item => item.Id == choice.Id) is { } current)
+                    scope.SelectedItem = current;
+            }));
+        return actions;
+    }
+
     static Icon LoadAppIcon()
     {
         using var artwork = typeof(InventoryWindow).Assembly.GetManifestResourceStream("FileInventory.AppIcon.ico");
@@ -283,10 +337,8 @@ sealed partial class InventoryWindow : Form
             hours.Value = Math.Clamp((decimal)(volume?.Hours ?? 24), hours.Minimum, hours.Maximum);
         }
         refresh.Enabled = !closing && !benchmark
-            && selection.Any(item => item.Online && !running.ContainsKey(item.Id));
+            && volumes.Any(item => item.Online && !running.ContainsKey(item.Id));
         cancel.Enabled = !closing && selection.Any(item => running.ContainsKey(item.Id));
-        refresh.Text = cancel.Enabled ? "Scan in progress…"
-            : selection.Count > 1 ? "Scan selected drives" : "Scan selected drive";
         UpdateScanDisplay();
         details.Text = selection.Count > 1
             ? "Select one volume to see details or edit its schedule.\r\n\r\n"
@@ -294,7 +346,7 @@ sealed partial class InventoryWindow : Form
                     $"{item.DisplayName}  " + (progress.TryGetValue(item.Id, out var scan)
                         ? $"Scanning {scan.Entries:N0} entries"
                         : item.Online ? item.Outcome : "Offline")))
-            : volume is null ? "Select a drive above, then click Scan selected drive." :
+            : volume is null ? "Select a drive to see its details, or click Scan drives… to start a scan." :
             $"System  {(string.IsNullOrWhiteSpace(volume.Host) ? "Unknown" : volume.Host)}    Type  {volume.KindLabel}\r\n" +
             $"Last attempt  {DisplayTime(volume.Attempted)}\r\n" +
             $"Last successful refresh  {DisplayTime(volume.Succeeded)}\r\n" +
@@ -339,9 +391,21 @@ sealed partial class InventoryWindow : Form
                 foreach (var volume in volumes.Where(v => v.Online && v.Enabled))
                     if (volume.Attempted is null || Catalog.Now() - volume.Attempted.Value >= volume.Hours * 3600000)
                         StartScan(volume);
+            if (!closing && (state.Text.Length == 0 || state.Text == displayedIdleStatus))
+                ShowIdleSearchStatus();
         }
         catch (Exception ex) { if (!closing) state.Text = ex.Message; }
         finally { discovering = false; }
+    }
+
+    void ShowIdleSearchStatus()
+    {
+        long now = Catalog.Now();
+        int overdue = volumes.Count(volume => volume.IsOverdue(now));
+        string hint = overdue == 0 ? "" : $"{overdue} {(overdue == 1 ? "drive" : "drives")} overdue for scan — open Drive Library to check.";
+        displayedIdleStatus = idleSearchStatus.Length == 0 || hint.Length == 0
+            ? idleSearchStatus + hint : $"{idleSearchStatus} · {hint}";
+        if (state.Text != displayedIdleStatus) state.Text = displayedIdleStatus;
     }
 
     async Task ReloadVolumes()
@@ -498,13 +562,14 @@ sealed partial class InventoryWindow : Form
 
     async void QueueSearch()
     {
-        if (closing) return;
+        if (closing || restoring) return;
         int requested = ++revision;
         long requestedAt = Stopwatch.GetTimestamp();
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
         activeRevision = -1;
         results.VirtualListSize = 0;
+        Theme.SetHighlightTerms(results, null);
         ShowActions();
         searchProgress.Visible = true;
         state.Text = "Loading inventory…";
@@ -515,23 +580,23 @@ sealed partial class InventoryWindow : Form
         {
             await Task.Delay(120, cancellation.Token);
             if (closing || requested != revision) return;
-            string text = query.Text;
-            long? low = ParseBytes(min.Text), high = ParseBytes(max.Text);
-            if (low > high) throw new FormatException("The maximum size must be at least the minimum.");
-            long? start = from.Checked ? Timestamp(from.Value.Date) : null;
-            long? end = through.Checked ? Timestamp(through.Value.Date.AddDays(1)) : null;
-            if (start >= end) throw new FormatException("The end date must be on or after the start date.");
+            string input = query.Text;
+            bool fileSearch = !string.IsNullOrWhiteSpace(input);
             var volume = (scope.SelectedItem as Choice)?.Id;
-            var parent = string.IsNullOrWhiteSpace(text) && volume is not null ? browseParent : null;
-            bool fileSearch = !string.IsNullOrWhiteSpace(text);
-            var filters = new Filters(fileSearch ? null : volume,
-                string.IsNullOrWhiteSpace(extension.Text) ? null : extension.Text.Trim(),
-                low, high, start, end, status.SelectedIndex == 0 ? null : status.SelectedIndex == 1,
-                fileSearch ? searchDrives?.ToArray() : null, includeRemoved.Checked);
+            var (text, filters) = QueryParser.Parse(input, ReadSearchFilters(fileSearch));
+            if (fileSearch && filters.Volume is { } drive)
+            {
+                var matches = volumes.Where(v => string.Equals(v.Mount.TrimEnd('\\'), drive.TrimEnd('\\'),
+                    StringComparison.OrdinalIgnoreCase) || string.Equals(v.DisplayName, drive,
+                    StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+                if (!volumesById.ContainsKey(drive) && matches.Length == 1) drive = matches[0].Id;
+                filters = filters with { Volume = drive, Drives = null };
+            }
+            var parent = !fileSearch && volume is not null ? browseParent : null;
             var token = cancellation.Token;
             var (page, ids) = await Task.Run(() =>
             {
-                if (!fileSearch)
+                if (string.IsNullOrWhiteSpace(text))
                     return (catalog.QueryPage(text, filters, 0, PageSize, parent, cancellationToken: token), (List<long>?)null);
                 var matches = catalog.IndexSearch(text, filters, token);
                 return (new CatalogPage(matches.Count, catalog.ReadSearchPage(text, matches, 0, PageSize, token)), matches);
@@ -544,12 +609,16 @@ sealed partial class InventoryWindow : Form
             activeInput = text; activeFilters = filters; activeParent = parent; activeRevision = requested;
             pageCache[0] = page.Rows;
             activeMatches = ids;
+            Theme.SetHighlightTerms(results, text.Replace('/', '\\').Replace("\0", "")
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             results.VirtualListSize = page.Total;
             results.Invalidate();
-            location.Text = string.IsNullOrWhiteSpace(text)
-                ? volume is null ? "All indexed files and folders" : Path.Combine(volumes.First(v => v.Id == volume).Mount, browseParent)
-                : $"Search results for “{text}” — click a result to show its location in the tree";
-            state.Text = $"{page.Total:N0} {(string.IsNullOrWhiteSpace(text) ? "items" : "matches")} · {Stopwatch.GetElapsedTime(requestedAt).TotalMilliseconds:N0} ms";
+            location.Text = fileSearch
+                ? $"Search results for “{input}” — click a result to show its location in the tree"
+                : volume is not null && volumesById.TryGetValue(volume, out var selectedVolume)
+                    ? Path.Combine(selectedVolume.Mount, browseParent) : "All indexed files and folders";
+            idleSearchStatus = $"{page.Total:N0} {(fileSearch ? "matches" : "items")} · {Stopwatch.GetElapsedTime(requestedAt).TotalMilliseconds:N0} ms";
+            ShowIdleSearchStatus();
             ShowActions();
         }
         catch (Exception ex)
@@ -567,6 +636,15 @@ sealed partial class InventoryWindow : Form
             if (!closing && requested == revision) searchProgress.Visible = false;
         }
     }
+
+    Filters ReadSearchFilters(bool fileSearch) => new(
+        fileSearch ? null : (scope.SelectedItem as Choice)?.Id,
+        string.IsNullOrWhiteSpace(extension.Text) ? null : extension.Text.Trim(),
+        ParseBytes(min.Text), ParseBytes(max.Text),
+        from.Checked ? Timestamp(from.Value.Date) : null,
+        through.Checked ? Timestamp(through.Value.Date.AddDays(1)) : null,
+        status.SelectedIndex <= 0 ? null : status.SelectedIndex == 1,
+        fileSearch ? searchDrives?.ToArray() : null, includeRemoved.Checked);
 
     static long? ParseBytes(string text)
     {
