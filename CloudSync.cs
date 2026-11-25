@@ -180,7 +180,7 @@ static class CloudSync
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                errors.Add($"Export {volume.Label} ({volume.Mount}): {ex.Message}");
+                errors.Add($"Export {volume.DisplayName}: {ex.Message}");
             }
         }
 
