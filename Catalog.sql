@@ -1,3 +1,4 @@
+PRAGMA auto_vacuum=INCREMENTAL;
 PRAGMA journal_mode=WAL;
 PRAGMA temp_store=MEMORY;
 BEGIN IMMEDIATE;
