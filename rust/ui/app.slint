@@ -1,12 +1,12 @@
 import { LineEdit, ComboBox, CheckBox, ListView, Palette as WidgetPalette } from "std-widgets.slint";
-import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile } from "controls.slint";
+import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile, ItemIcon } from "controls.slint";
 import { DeepSearch } from "deep_search.slint";
 import { DialogBody, DriveChoice } from "dialogs.slint";
 import { Palette, ThemeMode } from "theme.slint";
 export { Palette, ThemeMode }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.5.1";
+    title: "File Inventory 1.5.2";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -103,15 +103,15 @@ export component AppWindow inherits Window {
                     y: 10px; height: 36px; padding-left: 10px; padding-right: 10px; spacing: 4px;
                     tab-scope := Action { tab: true; label: root.scope-label; icon: "M2 3H14V11H2Z M5 13H11 M6 6L8 8L10 6"; clicked => { root.action("scope", 0); } }
                     tab-picker := Action { tab: true; label: "Scan drives"; icon: "M2 4H14V12H2Z M4 9H11 M11 6H12"; enabled: !root.busy; primary: true; clicked => { root.action("picker", 0); } }
-                    tab-cancel := Action { tab: true; label: "Cancel"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel", 0); } }
-                    tab-sync := Action { tab: true; label: root.syncing ? "Cancel sync" : "Sync"; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy || root.syncing; clicked => { root.action("sync", 0); } }
+                    tab-cancel := Action { tone: "danger"; tab: true; label: "Cancel"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel", 0); } }
+                    tab-sync := Action { tone: root.syncing ? "danger" : ""; icon-tint: Palette.teal; tab: true; label: root.syncing ? "Cancel sync" : "Sync"; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy || root.syncing; clicked => { root.action("sync", 0); } }
                     tab-sync-settings := Action { tab: true; label: ""; icon: "M8 1V4 M8 12V15 M1 8H4 M12 8H15 M3 3L5 5 M11 11L13 13 M3 13L5 11 M11 5L13 3 M8 4A4 4 0 1 0 8 12A4 4 0 1 0 8 4"; clicked => { root.action("sync-settings", 0); } }
-                    tab-library := Action { tab: true; label: "Drives"; icon: "M2 3H14V7H2Z M2 9H14V13H2Z M11 5H12 M11 11H12"; clicked => { root.action("library", 0); } }
-                    tab-duplicates := Action { tab: true; label: "Duplicates"; icon: "M2 2H10V10H2Z M6 11V14H14V6H11"; clicked => { root.action("duplicates", 0); } }
-                    tab-changes := Action { tab: true; label: "Changes"; icon: "M3 2H13V14H3Z M5 5H11 M5 8H11 M5 11H9"; clicked => { root.action("changes", 0); } }
-                    tab-deep := Action { tab: true; label: "Deep Search"; icon: "M11 7A4 4 0 1 0 3 7A4 4 0 1 0 11 7 M10 10L14 14"; clicked => { root.action("deep", 0); } }
+                    tab-library := Action { icon-tint: Palette.drive; tab: true; label: "Drives"; icon: "M2 3H14V7H2Z M2 9H14V13H2Z M11 5H12 M11 11H12"; clicked => { root.action("library", 0); } }
+                    tab-duplicates := Action { icon-tint: Palette.warning; tab: true; label: "Duplicates"; icon: "M2 2H10V10H2Z M6 11V14H14V6H11"; clicked => { root.action("duplicates", 0); } }
+                    tab-changes := Action { icon-tint: Palette.imported; tab: true; label: "Changes"; icon: "M3 2H13V14H3Z M5 5H11 M5 8H11 M5 11H9"; clicked => { root.action("changes", 0); } }
+                    tab-deep := Action { icon-tint: Palette.accent; tab: true; label: "Deep Search"; icon: "M11 7A4 4 0 1 0 3 7A4 4 0 1 0 11 7 M10 10L14 14"; clicked => { root.action("deep", 0); } }
                     Rectangle { horizontal-stretch: 1; }
-                    tab-theme := Action { tab: true; label: root.theme-label; icon: "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2"; clicked => { root.action("theme", 0); } }
+                    tab-theme := Action { icon-tint: Palette.folder; tab: true; label: root.theme-label; icon: "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2"; clicked => { root.action("theme", 0); } }
                     tab-more := Action { tab: true; label: "More"; icon: "M2 8H4 M7 8H9 M12 8H14"; clicked => { root.action("more", 0); } }
                 }
             }
@@ -131,9 +131,10 @@ export component AppWindow inherits Window {
                             vertical-stretch: 1;
                             for row[i] in root.tree : Rectangle {
                                 height: 29px; border-radius: 4px;
-                                background: i == root.tree-selection ? Palette.accent : tree-hit.has-hover ? Palette.surface-hover : Palette.surface;
+                                background: i == root.tree-selection ? Palette.accent-pressed : tree-hit.has-hover ? Palette.surface-hover : Palette.surface;
                                 Label { x: row.depth * 15px + 7px; width: 18px; text: row.marker; color: i == root.tree-selection ? white : Palette.muted; }
-                                Label { x: row.depth * 15px + 27px; width: parent.width - self.x - 4px; text: row.title; color: i == root.tree-selection ? white : Palette.fg; }
+                                ItemIcon { x: row.depth * 15px + 25px; y: (parent.height - self.height) / 2; kind: row.kind; }
+                                Label { x: row.depth * 15px + 44px; width: parent.width - self.x - 4px; text: row.title; color: i == root.tree-selection ? white : Palette.fg; }
                                 tree-hit := TouchArea { mouse-cursor: pointer; clicked => { root.action(self.mouse-x < row.depth * 15px + 26px ? "tree-toggle" : "tree-select", i); } }
                             }
                         }
@@ -168,7 +169,7 @@ export component AppWindow inherits Window {
                             Action { label: "Up"; enabled: root.has-volume; icon: "M3 8L8 3L13 8 M8 3V14"; clicked => { root.action("up", 0); } }
                             Label { text: root.path; horizontal-stretch: 1; color: Palette.muted; }
                             ComboBox { model: root.saved; current-index <=> root.saved-index; width: 157px; selected => { root.action("saved", self.current-index); } }
-                            Action { label: "Save"; icon: "M8 1L10 6L15 6L11 9L13 14L8 11L3 14L5 9L1 6L6 6Z"; clicked => { root.action("save-search", 0); } }
+                            Action { label: "Save"; icon-tint: Palette.folder; icon: "M8 1L10 6L15 6L11 9L13 14L8 11L3 14L5 9L1 6L6 6Z"; clicked => { root.action("save-search", 0); } }
                         }
                         Grid {
                             vertical-stretch: 1; rows: root.rows; selection <=> root.selection;
@@ -181,7 +182,7 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: 7px;
                             Action { label: "Copy path"; icon: "M2 2H10V10H2Z M6 11V14H14V6H11"; enabled: root.selection >= 0; clicked => { root.action("copy", 0); } }
-                            Action { label: "Reveal in Explorer"; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("reveal", 0); } }
+                            Action { label: "Reveal in Explorer"; icon-tint: Palette.folder; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("reveal", 0); } }
                             Action { label: "Find possible copies"; enabled: root.selection >= 0; clicked => { root.action("copies", 0); } }
                             Label { text: root.result-status; color: Palette.muted; horizontal-stretch: 1; horizontal-alignment: right; }
                             if root.page-back || root.page-next : Action { label: "‹"; enabled: root.page-back && !root.page-busy; clicked => { root.action("page-back", 0); } }
@@ -218,7 +219,7 @@ export component AppWindow inherits Window {
                         spacing: 8px;
                         Label { text: root.dialog-title; font-size: 21px; font-weight: 650; horizontal-stretch: 1; }
                         if root.busy && root.overlay != "deep" && root.overlay != "scope" && root.overlay != "more" : Action {
-                            label: "Cancel operation"; clicked => { root.action("cancel", 0); }
+                            label: "Cancel operation"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("cancel", 0); }
                         }
                         Action { label: "Close"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close", 0); } }
                     }
