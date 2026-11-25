@@ -326,7 +326,8 @@ impl ContentIndex {
                 corrections.get(&word.to_lowercase()).into_iter().flatten().cloned())).collect();
         let hits=hits.into_iter().take(limit).map(|(mut hit,body)|{
             hit.snippet=body.as_deref().and_then(|compressed|decompress(compressed).ok())
-                .map(|body|snippet(&body,&snippet_terms)).unwrap_or_default();
+                .map(|body|snippet(&body,&snippet_terms).split_whitespace().collect::<Vec<_>>().join(" "))
+                .unwrap_or_default();
             hit
         }).collect();
         let mut fuzzy_corrections:Vec<_>=corrections.into_iter().map(|(word,values)|format!("{word} → {}*",values[0])).collect();
