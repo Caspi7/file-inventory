@@ -9,6 +9,33 @@ static class UiHelpers
 {
     static readonly string[] SizeUnits = ["B", "KB", "MB", "GB", "TB"];
 
+    public static FlowLayoutPanel FlowRow(params Control[] controls)
+    {
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        row.Controls.AddRange(controls);
+        return row;
+    }
+
+    public static Button IconButton(string label, FluentIcon icon, bool enabled = true)
+    {
+        var button = new Button { Text = label, AutoSize = true, Enabled = enabled };
+        Theme.SetIcon(button, icon);
+        return button;
+    }
+
+    public static ListView DetailsList(params (string Name, int Width)[] columns)
+    {
+        var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
+            MultiSelect = false, HideSelection = false };
+        foreach (var (name, width) in columns) list.Columns.Add(name, width);
+        return list;
+    }
+
+    public static void SetAllChecked(CheckedListBox list, bool value)
+    {
+        for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, value);
+    }
+
     public static string FormatBytes(long bytes) => FormatBytes((decimal)bytes);
 
     // Reclaimable totals can exceed long.MaxValue.
