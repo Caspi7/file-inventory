@@ -1,12 +1,13 @@
 import { LineEdit, ComboBox, CheckBox, ListView, Palette as WidgetPalette } from "std-widgets.slint";
 import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile, ItemIcon } from "controls.slint";
 import { DeepSearch } from "deep_search.slint";
+import { Guide, GuideSection } from "guide.slint";
 import { DialogBody, DriveChoice } from "dialogs.slint";
 import { Palette, ThemeMode } from "theme.slint";
 export { Palette, ThemeMode }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.5.5";
+    title: "File Inventory 1.5.6";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -49,6 +50,7 @@ export component AppWindow inherits Window {
     in-out property <bool> page-next;
     in-out property <bool> page-busy;
     in-out property <string> overlay;
+    in property <[GuideSection]> guide-sections;
     in-out property <string> dialog-title;
     in-out property <string> dialog-status;
     in-out property <string> dialog-field;
@@ -93,6 +95,7 @@ export component AppWindow inherits Window {
     forward-focus: shortcuts;
     shortcuts := FocusScope {
         key-pressed(event) => {
+            if event.text == Key.F1 { root.action("help", 0); return accept; }
             if event.text == Key.Escape && root.overlay != "" { root.action("close", 0); return accept; }
             if event.modifiers.control {
                 if event.text == "k" || event.text == "K" { root.action("commands", 0); return accept; }
@@ -125,6 +128,13 @@ export component AppWindow inherits Window {
                     }
                     tab-theme := Action { icon-tint: Palette.folder; tab: true; label: root.theme-label; icon: "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2"; clicked => { root.action("theme", 0); } }
                     tab-more := Action { tab: true; label: "More"; icon: "M2 8H4 M7 8H9 M12 8H14"; clicked => { root.action("more", 0); } }
+                    tab-help := Action {
+                        tab: true; icon: "M5 5C5 1 12 1 12 5C12 8 8 8 8 11 M8 13V15";
+                        icon-tint: Palette.drive;
+                        accessible-role: button;
+                        accessible-label: "Open the File Inventory User Guide (F1)";
+                        clicked => { root.action("help", 0); }
+                    }
                 }
             }
             HorizontalLayout {
@@ -222,7 +232,7 @@ export component AppWindow inherits Window {
                 TouchArea {}
                 property <bool> small: root.overlay == "sync-settings" || root.overlay == "save-search" || root.overlay == "export" || root.overlay == "remove" || root.overlay == "import-password";
                 width: root.overlay == "scope" ? min(parent.width - 20px, 410px) : root.overlay == "more" ? 335px : min(parent.width - 36px, root.overlay == "deep" ? 1140px : small ? 650px : 940px);
-                height: root.overlay == "more" ? 255px : root.overlay == "scope" ? min(parent.height - 58px, 440px) : small ? min(parent.height - 36px, root.overlay == "sync-settings" ? 400px : 205px) : min(parent.height - 36px, 680px);
+                height: root.overlay == "more" ? 295px : root.overlay == "scope" ? min(parent.height - 58px, 440px) : small ? min(parent.height - 36px, root.overlay == "sync-settings" ? 400px : 205px) : min(parent.height - 36px, 680px);
                 x: root.overlay == "more" ? parent.width - self.width - 10px : root.overlay == "scope" ? 10px : (parent.width - self.width) / 2; y: root.overlay == "more" || root.overlay == "scope" ? 46px : (parent.height - self.height) / 2;
                 background: Palette.surface; border-radius: 9px; border-width: 1px; border-color: Palette.border-strong;
                 VerticalLayout {
@@ -263,7 +273,11 @@ export component AppWindow inherits Window {
                         sort(i) => { root.action("deep-sort", i); }
                         action(name) => { root.action(name, 0); }
                     }
-                    if root.overlay != "deep" : DialogBody {
+                    if root.overlay == "help" : Guide {
+                        vertical-stretch: 1;
+                        sections: root.guide-sections;
+                    }
+                    if root.overlay != "deep" && root.overlay != "help" : DialogBody {
                         vertical-stretch: 1; mode: root.overlay; choices: root.choices; rows: root.dialog-rows; details: root.dialog-details;
                         tiles: root.tiles; drives: root.dialog-drives; busy: root.busy;
                         status: root.overlay == "about" && root.update-installing ? root.status : root.dialog-status;
@@ -278,5 +292,5 @@ export component AppWindow inherits Window {
             }
         }
     }
-    hint: root.update-label != "" && root.update-hovered ? "Download and install the latest File Inventory release" : tab-scope.hovered ? "Choose the drives shown in the catalog" : tab-picker.hovered ? "Choose online drives to refresh" : tab-cancel.hovered ? "Cancel the current background operation" : tab-sync.hovered ? "Exchange snapshots with the configured cloud folder" : tab-sync-settings.hovered ? "Sync settings" : tab-library.hovered ? "Manage online and offline inventories" : tab-duplicates.hovered ? "Compare possible copies across drives" : tab-changes.hovered ? "Review scan history and file changes" : tab-deep.hovered ? "Search inside indexed files (Ctrl+Shift+F)" : tab-theme.hovered ? "Switch color theme" : tab-more.hovered ? "Storage map, commands, reports, and updates" : "";
+    hint: root.update-label != "" && root.update-hovered ? "Download and install the latest File Inventory release" : tab-scope.hovered ? "Choose the drives shown in the catalog" : tab-picker.hovered ? "Choose online drives to refresh" : tab-cancel.hovered ? "Cancel the current background operation" : tab-sync.hovered ? "Exchange snapshots with the configured cloud folder" : tab-sync-settings.hovered ? "Sync settings" : tab-library.hovered ? "Manage online and offline inventories" : tab-duplicates.hovered ? "Compare possible copies across drives" : tab-changes.hovered ? "Review scan history and file changes" : tab-deep.hovered ? "Search inside indexed files (Ctrl+Shift+F)" : tab-theme.hovered ? "Switch color theme" : tab-help.hovered ? "Open the File Inventory User Guide (F1)" : tab-more.hovered ? "Storage map, commands, reports, and updates" : "";
 }
