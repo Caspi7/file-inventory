@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 
@@ -165,7 +164,7 @@ sealed class DuplicatesDialog : Form
         {
             groups.Items.Clear();
             groups.Items.AddRange(results.Select((group, index) => new ListViewItem(
-                [(index + 1).ToString("N0"), FormatSize(Reclaimable(group)), FormatSize(group.Bytes),
+                [(index + 1).ToString("N0"), UiHelpers.FormatBytes(Reclaimable(group)), UiHelpers.FormatBytes(group.Bytes),
                     group.Files.Count.ToString("N0"), VerificationStatus(group)]) { Tag = group }).ToArray());
             if (groups.Items.Count > 0) groups.Items[0].Selected = true;
         }
@@ -175,14 +174,12 @@ sealed class DuplicatesDialog : Form
     }
 
     static decimal Reclaimable(DuplicateGroup group) => (decimal)group.Bytes * (group.Files.Count - 1);
-    static string FormatSize(decimal bytes) => bytes >= 1_048_576
-        ? $"{bytes / 1_048_576:N2} MB" : $"{bytes:N0} bytes";
     static string VerificationStatus(DuplicateGroup group) =>
         group.FullHash is null ? "Metadata only" : "Verified SHA-256";
 
     void ShowTotal(string? message = null)
     {
-        string totals = $"{results.Count:N0} groups · {FormatSize(results.Sum(Reclaimable))} reclaimable";
+        string totals = $"{results.Count:N0} groups · {UiHelpers.FormatBytes(results.Sum(Reclaimable))} reclaimable";
         status.Text = message is null ? totals : $"{message} · {totals}";
     }
 
@@ -218,8 +215,7 @@ sealed class DuplicatesDialog : Form
     void CopyPath()
     {
         if (SelectedFile is not { } file) return;
-        try { Clipboard.SetText(file.FullPath); }
-        catch (Exception ex) { ShowError(ex); }
+        UiHelpers.CopyText(file.FullPath, this);
     }
 
     async Task RevealAsync()
@@ -234,8 +230,7 @@ sealed class DuplicatesDialog : Form
                 ShowTotal("The selected path is unavailable");
                 return;
             }
-            using var explorer = Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{file.FullPath}\"")
-                { UseShellExecute = true });
+            UiHelpers.RevealInExplorer(file.FullPath, this);
         }
         catch (Exception ex) { if (!IsDisposed) ShowError(ex); }
     }
