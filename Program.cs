@@ -78,10 +78,10 @@ sealed partial class InventoryWindow : Form
     readonly TextBox details = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true,
         ScrollBars = ScrollBars.Vertical, WordWrap = true };
     readonly Label state = new() { AutoSize = true };
-    readonly Button refresh = new() { Text = "Scan drives…", Dock = DockStyle.Top,
-        Height = 44, BackColor = Color.FromArgb(0, 95, 184), ForeColor = Color.White,
+    readonly Button refresh = new() { Text = "Scan drives", AutoSize = true,
+        BackColor = Color.FromArgb(0, 95, 184), ForeColor = Color.White,
         FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = false };
-    readonly Button cancel = new() { Text = "Cancel scan", AutoSize = true };
+    readonly Button cancel = new() { Text = "Cancel", AutoSize = true };
     readonly Label scanState = new() { AutoSize = true, MaximumSize = new(240, 0),
         Margin = new Padding(3, 6, 3, 6) };
     readonly Button copy = new() { Text = "Copy path", AutoSize = true };
@@ -114,12 +114,12 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.1 · Benchmark" : "File Inventory 1.3.1";
+        Text = benchmark ? "File Inventory 1.3.2 · Benchmark" : "File Inventory 1.3.2";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
         Height = 830;
-        MinimumSize = new(850, 630);
+        MinimumSize = new(940, 630);
         Font = Theme.BodyFont;
         StartPosition = FormStartPosition.CenterScreen;
 
@@ -235,7 +235,7 @@ sealed partial class InventoryWindow : Form
         switch (keyData)
         {
             case Keys.Control | Keys.K:
-                CommandPalette.Show(this, currentTheme, BuildCommandPaletteActions());
+                ShowCommandPalette();
                 return true;
             case Keys.Control | Keys.F:
             case Keys.Control | Keys.L:
@@ -256,6 +256,8 @@ sealed partial class InventoryWindow : Form
         }
     }
 
+    void ShowCommandPalette() => CommandPalette.Show(this, currentTheme, BuildCommandPaletteActions());
+
     IReadOnlyList<CommandAction> BuildCommandPaletteActions()
     {
         List<CommandAction> actions =
@@ -267,7 +269,7 @@ sealed partial class InventoryWindow : Form
             new("Duplicates…", "Inventory", "", duplicatesButton.PerformClick),
             new("Changes…", "Inventory", "", changesButton.PerformClick),
             new("Saved searches", "Search", "", savedSearchButton.PerformClick),
-            new("Check for updates", "Application", "", updateButton.PerformClick),
+            new(updateButton.Text, "Application", "", updateButton.PerformClick),
             new("Release notes", "Application", "", releaseNotesButton.PerformClick)
         ];
         foreach (var theme in Enum.GetValues<AppTheme>())
