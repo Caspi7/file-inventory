@@ -90,6 +90,7 @@ sealed partial class InventoryWindow
         window.Controls.Add(layout);
         window.AcceptButton = apply;
         window.CancelButton = dismiss;
+        window.Load += (_, _) => Theme.Apply(window, darkMode);
         if (window.ShowDialog(this) != DialogResult.OK) return;
         var selected = list.CheckedIndices.Cast<int>().Select(i => scanned[i].Id).ToHashSet(StringComparer.Ordinal);
         ApplySearchDrives(selected.Count == scanned.Count ? null : selected);
