@@ -13,8 +13,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.5.5";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.5.5
+pub const APP_VERSION: &str = "1.5.6";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.5.6
+- Added a built-in Help & User Guide with six browsable topics, accessible from the command bar or F1.
+- Smart Deep Search understands natural exclusions, slash alternatives, and conversational keywords. It ranks full and partial matches together using keyword coverage, adjacency, filename matches, and text relevance.
+
+File Inventory 1.5.5
 - Added 1-click drive removal (trash icon on every drive row in Drive Scope and Drive Library, plus Remove drive button) supporting offline, imported, and online drives, and cleaning up Deep Search content and selected drives.
 
 File Inventory 1.5.4
