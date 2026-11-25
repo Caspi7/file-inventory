@@ -6,7 +6,7 @@ import { Palette, ThemeMode } from "theme.slint";
 export { Palette, ThemeMode }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.5.2";
+    title: "File Inventory 1.5.3";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -19,6 +19,12 @@ export component AppWindow inherits Window {
     in-out property <float> progress;
     in-out property <bool> busy;
     in-out property <bool> syncing;
+    in-out property <string> update-label;
+    in-out property <string> update-summary;
+    in-out property <string> update-notes;
+    in-out property <bool> update-checking;
+    in-out property <bool> update-installing;
+    property <bool> update-hovered;
     in-out property <[TreeRow]> tree;
     in-out property <int> tree-selection: -1;
     in-out property <[DataRow]> rows;
@@ -111,6 +117,12 @@ export component AppWindow inherits Window {
                     tab-changes := Action { icon-tint: Palette.imported; tab: true; label: "Changes"; icon: "M3 2H13V14H3Z M5 5H11 M5 8H11 M5 11H9"; clicked => { root.action("changes", 0); } }
                     tab-deep := Action { icon-tint: Palette.accent; tab: true; label: "Deep Search"; icon: "M11 7A4 4 0 1 0 3 7A4 4 0 1 0 11 7 M10 10L14 14"; clicked => { root.action("deep", 0); } }
                     Rectangle { horizontal-stretch: 1; }
+                    if root.update-label != "" : Action {
+                        tab: true; tone: "success"; label: root.update-label;
+                        icon: "M8 2V10 M4 6L8 10L12 6 M2 11V14H14V11";
+                        changed hovered => { root.update-hovered = self.hovered; }
+                        clicked => { root.action("update-show", 0); }
+                    }
                     tab-theme := Action { icon-tint: Palette.folder; tab: true; label: root.theme-label; icon: "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2"; clicked => { root.action("theme", 0); } }
                     tab-more := Action { tab: true; label: "More"; icon: "M2 8H4 M7 8H9 M12 8H14"; clicked => { root.action("more", 0); } }
                 }
@@ -218,7 +230,8 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 8px;
                         Label { text: root.dialog-title; font-size: 21px; font-weight: 650; horizontal-stretch: 1; }
-                        if root.busy && root.overlay != "deep" && root.overlay != "scope" && root.overlay != "more" : Action {
+                        if root.busy && root.overlay != "deep" && root.overlay != "scope" && root.overlay != "more"
+                            && !(root.overlay == "about" && root.update-installing) : Action {
                             label: "Cancel operation"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("cancel", 0); }
                         }
                         Action { label: "Close"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close", 0); } }
@@ -252,7 +265,11 @@ export component AppWindow inherits Window {
                     }
                     if root.overlay != "deep" : DialogBody {
                         vertical-stretch: 1; mode: root.overlay; choices: root.choices; rows: root.dialog-rows; details: root.dialog-details;
-                        tiles: root.tiles; drives: root.dialog-drives; status: root.dialog-status; busy: root.busy;
+                        tiles: root.tiles; drives: root.dialog-drives; busy: root.busy;
+                        status: root.overlay == "about" && root.update-installing ? root.status : root.dialog-status;
+                        update-summary: root.update-summary; update-notes: root.update-notes;
+                        update-checking: root.update-checking; update-installing: root.update-installing;
+                        update-progress: root.progress;
                         selection <=> root.dialog-selection; detail-selection <=> root.detail-selection; map-drive <=> root.map-drive; format <=> root.report-format;
                         field <=> root.dialog-field; second <=> root.dialog-second; flag <=> root.dialog-flag; second-flag <=> root.dialog-second-flag;
                         action(name, index) => { root.action(name, index); }
@@ -261,5 +278,5 @@ export component AppWindow inherits Window {
             }
         }
     }
-    hint: tab-scope.hovered ? "Choose the drives shown in the catalog" : tab-picker.hovered ? "Choose online drives to refresh" : tab-cancel.hovered ? "Cancel the current background operation" : tab-sync.hovered ? "Exchange snapshots with the configured cloud folder" : tab-sync-settings.hovered ? "Sync settings" : tab-library.hovered ? "Manage online and offline inventories" : tab-duplicates.hovered ? "Compare possible copies across drives" : tab-changes.hovered ? "Review scan history and file changes" : tab-deep.hovered ? "Search inside indexed files (Ctrl+Shift+F)" : tab-theme.hovered ? "Switch color theme" : tab-more.hovered ? "Storage map, commands, reports, and updates" : "";
+    hint: root.update-label != "" && root.update-hovered ? "Download and install the latest File Inventory release" : tab-scope.hovered ? "Choose the drives shown in the catalog" : tab-picker.hovered ? "Choose online drives to refresh" : tab-cancel.hovered ? "Cancel the current background operation" : tab-sync.hovered ? "Exchange snapshots with the configured cloud folder" : tab-sync-settings.hovered ? "Sync settings" : tab-library.hovered ? "Manage online and offline inventories" : tab-duplicates.hovered ? "Compare possible copies across drives" : tab-changes.hovered ? "Review scan history and file changes" : tab-deep.hovered ? "Search inside indexed files (Ctrl+Shift+F)" : tab-theme.hovered ? "Switch color theme" : tab-more.hovered ? "Storage map, commands, reports, and updates" : "";
 }
