@@ -97,6 +97,7 @@ sealed partial class InventoryWindow : Form
     readonly Dictionary<string, (CancellationTokenSource Cancellation, Task Work)> running = new();
     readonly Dictionary<string, ScanProgress> progress = new();
     List<Volume> volumes = [];
+    Dictionary<string, Volume> volumesById = new(StringComparer.Ordinal);
     bool restoring, discovering, closing, readyToClose;
     int revision;
     bool savingSchedule;
@@ -110,7 +111,7 @@ sealed partial class InventoryWindow : Form
         this.catalog = catalog;
         this.benchmark = benchmark;
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.17 · Benchmark" : "File Inventory 1.2.17";
+        Text = benchmark ? "File Inventory 1.2.18 · Benchmark" : "File Inventory 1.2.18";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -192,7 +193,7 @@ sealed partial class InventoryWindow : Form
         results.Columns.Add("Filename", 180);
         results.Columns.Add("Extension", 90);
         results.Columns.Add("Full path", 320);
-        results.Columns.Add("Volume", 100);
+        results.Columns.Add("Volume", 180);
         results.Columns.Add("Status", 95);
         results.Columns.Add("Last seen", 145);
         results.Columns.Add("Bytes", 90, HorizontalAlignment.Right);
@@ -282,10 +283,11 @@ sealed partial class InventoryWindow : Form
         details.Text = selection.Count > 1
             ? "Select one volume to see details or edit its schedule.\r\n\r\n"
                 + string.Join("\r\n", selection.Select(item =>
-                    $"{item.Label} ({item.Mount})  " + (progress.TryGetValue(item.Id, out var scan)
+                    $"{item.DisplayName}  " + (progress.TryGetValue(item.Id, out var scan)
                         ? $"Scanning {scan.Entries:N0} entries"
                         : item.Online ? item.Outcome : "Offline")))
             : volume is null ? "Select a drive above, then click Scan selected drive." :
+            $"System  {(string.IsNullOrWhiteSpace(volume.Host) ? "Unknown" : volume.Host)}    Type  {volume.KindLabel}\r\n" +
             $"Last attempt  {DisplayTime(volume.Attempted)}\r\n" +
             $"Last successful refresh  {DisplayTime(volume.Succeeded)}\r\n" +
             (progress.TryGetValue(volume.Id, out var current)
@@ -338,9 +340,10 @@ sealed partial class InventoryWindow : Form
     {
         var list = await Task.Run(catalog.Volumes);
         if (closing || volumes.SequenceEqual(list)) { if (!closing) ShowVolume(); return; }
-        bool topologyChanged = !volumes.Select(v => (v.Id, v.Mount, v.Label, v.Online))
-            .SequenceEqual(list.Select(v => (v.Id, v.Mount, v.Label, v.Online)));
+        bool topologyChanged = !volumes.Select(v => (v.Id, v.Mount, v.Label, v.Online, v.Host, v.Removable))
+            .SequenceEqual(list.Select(v => (v.Id, v.Mount, v.Label, v.Online, v.Host, v.Removable)));
         volumes = list;
+        volumesById = list.ToDictionary(v => v.Id, StringComparer.Ordinal);
         if (!topologyChanged && browserInitialized) { ShowVolume(); return; }
         restoring = true;
         var filterId = (scope.SelectedItem as Choice)?.Id;
@@ -350,10 +353,7 @@ sealed partial class InventoryWindow : Form
         scope.Items.Add(new Choice(null, "All volumes"));
         foreach (var volume in volumes)
         {
-            string label = volume.Label == volume.Mount ? volume.Mount : $"{volume.Label} ({volume.Mount})";
-            if (volume.Id.StartsWith("import:", StringComparison.Ordinal)) label += " · Imported";
-            else if (!volume.Online) label += " · Offline";
-            var choice = new Choice(volume.Id, label);
+            var choice = new Choice(volume.Id, volume.DisplayStatusLabel);
             int index = drives.Items.Add(choice);
             if (selected.Contains(volume.Id)) drives.SetSelected(index, true);
             index = scope.Items.Add(choice);
