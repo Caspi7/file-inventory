@@ -5,6 +5,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.20
+        • Fixed Cloud Sync auto-import: now automatically detects and imports .finv.gz, .finv.enc, and .fiinventory snapshots in the sync folder into Drive Library, and re-imports any drive missing from the local catalog.
+
         File Inventory 1.2.19
         • Multi-drive scan picker: clicking "Scan drives…" opens a themed dialog to select one, multiple, or all online drives to scan at once (with Select all / Select none buttons).
 
