@@ -35,11 +35,6 @@ sealed partial class InventoryWindow
             MessageBox.Show(this, "Wait for the current scan or inventory transfer to finish, then try again.", "File Inventory update");
             return;
         }
-        if (!AppUpdates.IsInstalledHere())
-        {
-            MessageBox.Show(this, "Install File Inventory using Setup to enable in-app updates.", "File Inventory update");
-            return;
-        }
         checkingUpdates = true;
         updateButton.Text = "Cancel update check";
         UpdateScanDisplay();
