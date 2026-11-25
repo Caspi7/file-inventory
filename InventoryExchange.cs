@@ -10,7 +10,8 @@ sealed partial class Catalog
     const string ImportedPrefix = "import:";
     const string ArchiveFormat = "FileInventory";
     static readonly UTF8Encoding ArchiveEncoding = new(false, true);
-    sealed record ArchiveHeader(string Format, int Version, string Id, string Label, string Mount);
+    sealed record ArchiveHeader(string Format, int Version, string Id, string Label, string Mount,
+        string? Host = null, bool Removable = false);
 
     public void ExportInventory(string drive, string destination)
     {
@@ -19,15 +20,18 @@ sealed partial class Catalog
         Execute(db, "BEGIN;");
         ArchiveHeader header;
         using (var command = Command(db, """
-            SELECT label,mount,(SELECT value FROM catalog_meta WHERE key='archive-origin')
+            SELECT label,mount,host,removable,(SELECT value FROM catalog_meta WHERE key='archive-origin')
             FROM volumes WHERE id=$drive AND (succeeded IS NOT NULL OR id LIKE 'import:%');
             """, ("drive", drive)))
         using (var reader = command.ExecuteReader())
         {
             if (!reader.Read()) throw new InvalidOperationException("Scan this drive before exporting it.");
+            string host = reader.GetString(2);
+            if (string.IsNullOrWhiteSpace(host)) host = Environment.MachineName;
+            bool removable = reader.GetBoolean(3);
             string id = drive.StartsWith(ImportedPrefix, StringComparison.Ordinal) ? drive[ImportedPrefix.Length..]
-                : Convert.ToHexString(SHA256.HashData(ArchiveEncoding.GetBytes(reader.GetString(2) + drive)));
-            header = new(ArchiveFormat, 1, id, reader.GetString(0), reader.GetString(1));
+                : Convert.ToHexString(SHA256.HashData(ArchiveEncoding.GetBytes(reader.GetString(4) + drive)));
+            header = new(ArchiveFormat, 1, id, reader.GetString(0), reader.GetString(1), host, removable);
         }
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -74,14 +78,19 @@ sealed partial class Catalog
             || (header.Mount.Length > 3 && !ValidRelativePath(header.Mount[3..].TrimEnd('\\'))))
             throw new InvalidDataException("Unsupported or invalid inventory header.");
 
+        string host = string.IsNullOrWhiteSpace(header.Host) ? "" : header.Host.Trim();
+        if (host.Length > 256 || host.Any(char.IsControl))
+            throw new InvalidDataException("Unsupported or invalid inventory header.");
+
         string id = ImportedPrefix + header.Id.ToUpperInvariant();
         using var db = Open();
         Execute(db, "BEGIN IMMEDIATE;");
         Execute(db, """
-            INSERT INTO volumes(id,mount,label,online,outcome) VALUES($id,$mount,$label,0,'Imported')
-            ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=0;
+            INSERT INTO volumes(id,mount,label,online,outcome,host,removable) VALUES($id,$mount,$label,0,'Imported',$host,$removable)
+            ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=0,host=excluded.host,removable=excluded.removable;
             DELETE FROM files WHERE volume=$id;
-            """, ("id", id), ("mount", header.Mount), ("label", header.Label));
+            """, ("id", id), ("mount", header.Mount), ("label", header.Label),
+            ("host", host), ("removable", header.Removable ? 1 : 0));
         using var insert = Command(db, """
             INSERT INTO files(volume,rel,name,name_key,parent_key,extension,bytes,created,modified,attributes,seen,stale,removed)
             VALUES($v,$r,$n,$k,$p,$x,$b,$c,$m,$a,$s,$t,$d);
