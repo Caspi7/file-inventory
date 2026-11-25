@@ -408,6 +408,15 @@ sealed class Scanner(Catalog catalog)
             Record(finished, true);
             Catalog.Execute(db, "COMMIT;");
             published = true;
+            try
+            {
+                Catalog.Execute(db, "DETACH DATABASE pending;");
+                Catalog.Execute(db, "PRAGMA incremental_vacuum(256); PRAGMA optimize;");
+            }
+            catch (SqliteException ex)
+            {
+                Trace.TraceWarning("Post-scan catalog maintenance failed: {0}", ex.Message);
+            }
             Report(volume.Mount, "Complete");
         }
         catch (OperationCanceledException)
