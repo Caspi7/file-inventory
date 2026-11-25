@@ -5,6 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.18
+        • System/host ownership & removable drive tracking: each scanned drive records its owning PC (host) and Fixed vs. Removable type, synced across machines via Cloud Sync & exports.
+        • Hardware volume IDs automatically update ownership if a drive is moved to another PC; Browse drive, Drive Library, search results, and file details now clearly show the owning system.
+
         File Inventory 1.2.17
         • Fixed background lingering process on close: bounded 3s scan shutdown timeout, clean Environment.Exit(0) on exit, and normal taskbar minimize instead of hiding invisibly to the system tray.
 
