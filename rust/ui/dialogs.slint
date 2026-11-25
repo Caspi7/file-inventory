@@ -1,8 +1,8 @@
 import { LineEdit, ComboBox, CheckBox, ListView, ScrollView } from "std-widgets.slint";
-import { Action, Label, DataRow, Grid, Tile } from "controls.slint";
+import { Action, Label, DataRow, Grid, Tile, SemanticPill } from "controls.slint";
 import { Palette } from "theme.slint";
 
-export struct DriveChoice { title: string, badge: string, checked: bool, is-header: bool, imported: bool }
+export struct DriveChoice { title: string, badge: string, checked: bool, is-header: bool, imported: bool, online: bool }
 
 export component DialogBody inherits VerticalLayout {
     in property <string> mode;
@@ -39,6 +39,10 @@ export component DialogBody inherits VerticalLayout {
                     else { root.action("drive-toggle", i); }
                 }
             }
+            if drive.is-header : Rectangle {
+                x: 0px; y: 6px; width: 3px; height: parent.height - 12px; border-radius: 1.5px;
+                background: drive.imported ? Palette.imported : Palette.drive;
+            }
             if drive.is-header : Label {
                 x: 9px; width: parent.width - 18px;
                 text: drive.title; font-weight: 650; color: Palette.muted;
@@ -47,15 +51,10 @@ export component DialogBody inherits VerticalLayout {
                 padding-left: 9px; padding-right: 9px; spacing: 8px;
                 CheckBox { checked: drive.checked; toggled => { root.action("drive-toggle", i); } }
                 Label { text: drive.title; preferred-width: 0px; horizontal-stretch: 1; }
-                Rectangle {
-                    width: min(badge-text.preferred-width + 16px, 166px); height: 24px;
-                    border-radius: 12px; border-width: 1px;
-                    border-color: drive.imported ? Palette.accent : Palette.border;
-                    background: drive.imported ? Palette.surface-hover : Palette.surface-readonly;
-                    badge-text := Label {
-                        x: 8px; width: parent.width - 16px;
-                        text: drive.badge; color: drive.imported ? Palette.fg : Palette.muted;
-                    }
+                SemanticPill {
+                    text: drive.badge;
+                    tone: drive.imported ? "imported" : drive.online ? "success" : "warning";
+                    dot: !drive.imported && drive.online;
                 }
             }
         }
@@ -79,7 +78,7 @@ export component DialogBody inherits VerticalLayout {
             spacing: 8px;
             Action { label: "Import…"; enabled: !root.busy; clicked => { root.action("drive-import", 0); } }
             Action { label: "Export…"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-export", 0); } }
-            Action { label: "Remove offline drive"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-remove", 0); } }
+            Action { label: "Remove offline drive"; tone: "danger"; icon: "M3 4H13 M6 4V2H10V4 M4 4L5 14H11L12 4 M7 7V11 M9 7V11"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-remove", 0); } }
             Rectangle { horizontal-stretch: 1; }
         }
     }
@@ -91,7 +90,7 @@ export component DialogBody inherits VerticalLayout {
         selected(i) => { root.action("dialog-select", i); }
     }
     if root.mode == "duplicates" || root.mode == "changes" : Grid {
-        rows: root.details; column-mode: "dialog"; vertical-stretch: 1; selection <=> root.detail-selection;
+        rows: root.details; column-mode: root.mode == "changes" ? "changes" : "dialog"; vertical-stretch: 1; selection <=> root.detail-selection;
         headers: root.mode == "changes" ? { a: "Change", b: "Old bytes", c: "Path", d: "New bytes" } : { a: "Filename", b: "Volume", c: "Full path", d: "Status" };
     }
     if root.mode == "duplicates" || root.mode == "copies" : HorizontalLayout {
@@ -99,7 +98,7 @@ export component DialogBody inherits VerticalLayout {
         if root.mode == "duplicates" : Action { label: "Find duplicates"; enabled: !root.busy; clicked => { root.action("duplicate-scan", 0); } }
         if root.mode == "duplicates" : Action { label: "Verify SHA-256"; enabled: !root.busy && root.rows.length > 0; clicked => { root.action("duplicate-verify", 0); } }
         Action { label: "Copy path"; clicked => { root.action("dialog-copy", 0); } }
-        Action { label: "Reveal in Explorer"; clicked => { root.action("dialog-reveal", 0); } }
+        Action { label: "Reveal in Explorer"; icon-tint: Palette.folder; icon: "M1 4H6L8 6H15L13 13H1Z"; clicked => { root.action("dialog-reveal", 0); } }
         Rectangle { horizontal-stretch: 1; }
     }
     if root.mode == "map" : VerticalLayout {
