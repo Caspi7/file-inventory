@@ -32,14 +32,14 @@ export component DeepSearch inherits VerticalLayout {
     spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
-        LineEdit { placeholder-text: "Search inside files… e.g. (invoice OR receipt) 2025 -draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
+        LineEdit { placeholder-text: "Search inside files… e.g. invoice 2025 without draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
         ComboBox { model: root.drives; current-index <=> root.drive; width: 220px; selected => { root.action("deep-search"); } }
         LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 100px; }
         Action { label: "Search"; primary: true; clicked => { root.action("deep-search"); } }
     }
     HorizontalLayout {
         spacing: 6px;
-        ComboBox { model: ["Smart (Boolean + Close)", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]; current-index <=> root.match-mode; width: 190px; selected => { root.action("deep-search"); } }
+        ComboBox { model: ["Smart", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]; current-index <=> root.match-mode; width: 190px; selected => { root.action("deep-search"); } }
         CheckBox { text: "Typo-tolerant"; checked <=> root.fuzzy; toggled => { root.action("deep-search"); } }
         for helper in ["+ AND", "+ OR", "+ Exclude", "\"Phrase\"", "(Group)", "? Tips"] : Action {
             label: helper;
@@ -52,8 +52,12 @@ export component DeepSearch inherits VerticalLayout {
         Rectangle { horizontal-stretch: 1; }
     }
     if tips : Rectangle {
-        height: 34px; background: Palette.surface-alt; border-radius: 5px;
-        Label { x: 8px; width: parent.width - 16px; text: "Try (invoice OR receipt) 2025 -draft, \"annual report\", or backup AND recovery."; }
+        height: 38px; background: Palette.surface-alt; border-radius: 5px;
+        HorizontalLayout {
+            padding: 4px; padding-left: 8px; spacing: 8px;
+            Label { horizontal-stretch: 1; text: "Try invoice/receipt 2025 without draft, \"annual report\", or backup AND recovery."; }
+            Action { label: "Open Full Guide"; clicked => { root.action("help"); } }
+        }
     }
     HorizontalLayout {
         spacing: 8px; height: 23px;
