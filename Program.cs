@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.3 · Benchmark" : "File Inventory 1.3.3";
+        Text = benchmark ? "File Inventory 1.3.4 · Benchmark" : "File Inventory 1.3.4";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -426,27 +426,21 @@ sealed partial class InventoryWindow : Form
         volumesById = list.ToDictionary(v => v.Id, StringComparer.Ordinal);
         if (!topologyChanged && browserInitialized) { ShowVolume(); return; }
         restoring = true;
-        var filterId = (scope.SelectedItem as Choice)?.Id;
         var selected = drives.SelectedItems.Cast<Choice>().Select(choice => choice.Id).ToHashSet();
         drives.Items.Clear();
-        scope.Items.Clear();
-        scope.Items.Add(new Choice(null, "All volumes"));
         foreach (var volume in volumes)
         {
             var choice = new Choice(volume.Id, volume.DisplayStatusLabel);
             int index = drives.Items.Add(choice);
             if (selected.Contains(volume.Id)) drives.SetSelected(index, true);
-            index = scope.Items.Add(choice);
-            if (volume.Id == filterId) scope.SelectedIndex = index;
         }
-        if (scope.SelectedIndex < 0) scope.SelectedIndex = 0;
         if (drives.SelectedIndex < 0 && drives.Items.Count > 0)
         {
             drives.SelectedIndex = 0;
         }
         selectedId = (drives.SelectedItem as Choice)?.Id;
-        if (filterId is null && !browserInitialized && scope.Items.Count > 1)
-            scope.SelectedIndex = 1;
+        if (ReloadBrowseScope(selectFirstDrive: !browserInitialized) && browserInitialized)
+            browseParent = "";
         restoring = false;
         browserInitialized = true;
         ShowVolume();
