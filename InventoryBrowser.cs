@@ -64,7 +64,7 @@ sealed partial class InventoryWindow
         toolbar.ColumnStyles.Add(new(SizeType.AutoSize));
         toolbar.RowStyles.Add(new(SizeType.AutoSize));
         toolbar.Controls.Add(CommandGroup(AnchorStyles.Left,
-            scope, refresh, cancel, syncButton, library, duplicatesButton, changesButton), 0, 0);
+            scope, refresh, cancel, syncButton, syncSettingsButton, library, duplicatesButton, changesButton), 0, 0);
         toolbar.Controls.Add(CommandGroup(AnchorStyles.Right, themeButton, moreButton), 1, 0);
         InitializeMoreMenu();
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
@@ -225,7 +225,7 @@ sealed partial class InventoryWindow
                 if ((scope.SelectedItem as Choice)?.Id != branch.Volume)
                 {
                     restoring = true;
-                    scope.SelectedIndex = scope.Items.Cast<Choice>().ToList().FindIndex(c => c.Id == branch.Volume);
+                    scope.SelectedItem = scope.Items.Cast<Choice>().FirstOrDefault(c => c.Id == branch.Volume) ?? scope.Items[0];
                     restoring = false;
                 }
                 QueueSearch();
@@ -290,15 +290,16 @@ sealed partial class InventoryWindow
     void InitializeMoreMenu()
     {
         var menu = new ContextMenuStrip();
-        ToolStripMenuItem AddCommand(Button button)
+        ToolStripMenuItem AddCommand(Button button, string? label = null)
         {
-            var item = new ToolStripMenuItem(button.Text, null, (_, _) => button.PerformClick());
+            var item = new ToolStripMenuItem(label ?? button.Text, null, (_, _) => button.PerformClick());
             menu.Opening += (_, _) =>
             {
-                item.Text = button.Text;
+                item.Text = label ?? button.Text;
                 item.Enabled = button.Enabled;
             };
-            FormClosed += (_, _) => button.Dispose();
+            if (button.Parent is null)
+                FormClosed += (_, _) => button.Dispose();
             return item;
         }
 
@@ -320,7 +321,7 @@ sealed partial class InventoryWindow
             new ToolStripMenuItem(StorageMapCommand, null, (_, _) => ShowStorageMap())
                 { ShortcutKeyDisplayString = "Ctrl+M" },
             new ToolStripSeparator(),
-            AddCommand(syncSettingsButton),
+            AddCommand(syncSettingsButton, "Sync settings…"),
             new ToolStripMenuItem("Command Palette (Ctrl+K)", null, (_, _) => ShowCommandPalette()),
             new ToolStripSeparator(),
             AddCommand(updateButton),
@@ -380,8 +381,6 @@ sealed partial class InventoryWindow
             (library, "Manage scanned drives, search scope, drive notes, and exports (Ctrl+D)."),
             (duplicatesButton, "Find matching files across drives and verify copies with SHA-256."),
             (changesButton, "Review scan history and see which files changed between scans."),
-            (syncButton, "Sync inventory snapshots using your configured folder (Ctrl+Shift+S)."),
-            (syncSettingsButton, "Configure your sync folder, automatic sync, and encryption."),
             (searchDrive, "Limit filename searches to the drive selected above."),
             (updateButton, "Check for a newer File Inventory release."),
             (releaseNotesButton, "Read the release notes and version history."),
@@ -527,6 +526,35 @@ sealed partial class InventoryWindow
         if (drives.SelectedIndex != index) { drives.ClearSelected(); drives.SelectedIndex = index; }
         selectedId = volume;
         ShowVolume();
+    }
+
+    bool ReloadBrowseScope(bool selectFirstDrive = false)
+    {
+        var previousId = (scope.SelectedItem as Choice)?.Id;
+        bool wasRestoring = restoring;
+        restoring = true;
+        scope.BeginUpdate();
+        try
+        {
+            scope.Items.Clear();
+            scope.Items.Add(new Choice(null, "All volumes"));
+            int selectedIndex = 0;
+            foreach (var volume in volumes)
+            {
+                if (searchDrives is not null && !searchDrives.Contains(volume.Id)) continue;
+                int index = scope.Items.Add(new Choice(volume.Id, volume.DisplayStatusLabel));
+                if (volume.Id == previousId) selectedIndex = index;
+            }
+            if (selectFirstDrive && previousId is null && scope.Items.Count > 1)
+                selectedIndex = 1;
+            scope.SelectedIndex = selectedIndex;
+        }
+        finally
+        {
+            scope.EndUpdate();
+            restoring = wasRestoring;
+        }
+        return previousId != (scope.SelectedItem as Choice)?.Id;
     }
 
     void SelectBrowserDrive()
@@ -736,14 +764,14 @@ sealed partial class InventoryWindow
             await LocateCurrentHit();
             browseParent = hit.RelativePath;
             restoring = true;
-            scope.SelectedIndex = scope.Items.Cast<Choice>().ToList().FindIndex(c => c.Id == hit.Volume);
+            scope.SelectedItem = scope.Items.Cast<Choice>().FirstOrDefault(c => c.Id == hit.Volume) ?? scope.Items[0];
             restoring = false;
         }
         else if (tree.SelectedNode?.Tag is Branch branch)
         {
             browseParent = branch.Directory ? branch.Relative : Path.GetDirectoryName(branch.Relative) ?? "";
             restoring = true;
-            scope.SelectedIndex = scope.Items.Cast<Choice>().ToList().FindIndex(c => c.Id == branch.Volume);
+            scope.SelectedItem = scope.Items.Cast<Choice>().FirstOrDefault(c => c.Id == branch.Volume) ?? scope.Items[0];
             restoring = false;
         }
         query.Clear();
