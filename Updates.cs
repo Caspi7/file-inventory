@@ -7,6 +7,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.2
+        • Fixed oversized vertical empty space above and below the top Command Bar (now a crisp fixed 48px single-row bar).
+
         File Inventory 1.4.1
         • Saved Drive Library drive selections across restarts (selected_drives.json) so deselected/imported drives stay hidden until you re-enable them.
         • Disabled inner single-file Deflate compression so Inno Setup LZMA2 Ultra64 compresses raw assemblies directly, dramatically shrinking the installer download size and speeding up app startup.
