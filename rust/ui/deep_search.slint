@@ -1,5 +1,5 @@
 import { LineEdit, ComboBox, CheckBox, VerticalBox, HorizontalBox } from "std-widgets.slint";
-import { Action, Label, Grid, DataRow, Meter } from "controls.slint";
+import { Action, Label, Grid, DataRow, Meter, SemanticPill } from "controls.slint";
 import { Palette } from "theme.slint";
 
 export component DeepSearch inherits VerticalLayout {
@@ -43,6 +43,7 @@ export component DeepSearch inherits VerticalLayout {
         CheckBox { text: "Typo-tolerant"; checked <=> root.fuzzy; toggled => { root.action("deep-search"); } }
         for helper in ["+ AND", "+ OR", "+ Exclude", "\"Phrase\"", "(Group)", "? Tips"] : Action {
             label: helper;
+            tone: helper == "+ AND" ? "success" : helper == "+ OR" ? "accent" : helper == "+ Exclude" ? "danger" : "";
             clicked => {
                 if helper == "? Tips" { root.tips = !root.tips; }
                 else { root.query += helper == "+ AND" ? " AND " : helper == "+ OR" ? " OR " : helper == "+ Exclude" ? " -" : helper == "(Group)" ? " (invoice OR receipt)" : " \"exact phrase\""; }
@@ -57,11 +58,7 @@ export component DeepSearch inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px; height: 23px;
         Label { text: root.status; color: Palette.muted; horizontal-stretch: 1; }
-        if root.close-match : Rectangle {
-            width: 100px; border-radius: 11px; border-width: 1px;
-            border-color: Palette.accent; background: Palette.surface-readonly;
-            Label { text: "Close match"; color: Palette.accent; horizontal-alignment: center; }
-        }
+        if root.close-match : SemanticPill { text: "Close match"; tone: "warning"; }
     }
     Grid {
         vertical-stretch: 1; column-mode: "deep"; rows: root.rows; selection <=> root.selection;
@@ -73,7 +70,7 @@ export component DeepSearch inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px;
         Action { label: "Copy Path"; enabled: root.selection >= 0; clicked => { root.action("deep-copy"); } }
-        Action { label: "Reveal in Explorer"; enabled: root.selection >= 0; clicked => { root.action("deep-reveal"); } }
+        Action { label: "Reveal in Explorer"; icon-tint: Palette.folder; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("deep-reveal"); } }
         Rectangle { horizontal-stretch: 1; }
     }
     Rectangle {
@@ -95,13 +92,13 @@ export component DeepSearch inherits VerticalLayout {
             HorizontalLayout {
                 spacing: 7px;
                 Action { label: "Scan content"; primary: true; enabled: !root.busy; clicked => { root.action("content-scan"); } }
-                Action { label: "Cancel"; enabled: root.busy; clicked => { root.action("cancel"); } }
+                Action { label: "Cancel"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel"); } }
                 Meter { value: root.progress; horizontal-stretch: 1; }
                 Label { text: root.progress-text; min-width: 200px; }
             }
             HorizontalLayout {
                 spacing: 7px;
-                Action { label: "Sync content"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
+                Action { label: "Sync content"; icon-tint: Palette.teal; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
                 Action { label: "Export content…"; enabled: !root.busy; clicked => { root.action("content-export"); } }
                 Action { label: "Import content…"; enabled: !root.busy; clicked => { root.action("content-import"); } }
                 Rectangle { horizontal-stretch: 1; }
