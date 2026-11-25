@@ -5,9 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.9\n\n" +
-        "• Improved Dark/Light mode styling across all controls (ComboBox, DateTimePicker, ListView, and buttons).\n" +
-        "• Modern Win11/macOS-style UI with updated logo and release notes.";
+        "File Inventory 1.2.10\n\n" +
+        "• Fixed Dark Mode rendering for ListView headers, ComboBox dropdowns, ProgressBar, and disabled buttons.\n" +
+        "• Added Accept & Install Now dialog with release notes when an update is found.\n" +
+        "• Faster indexing, smaller SQLite catalog, and smaller single-file executable.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
@@ -50,11 +51,8 @@ sealed partial class InventoryWindow
             }
 
             updateRelease = release;
-            if (!closing)
-            {
-                var notes = string.IsNullOrWhiteSpace(release.Notes) ? "No release notes provided." : release.Notes;
-                MessageBox.Show(this, notes, $"Update available: File Inventory {release.Version}");
-            }
+            if (!closing && !ConfirmUpdate(release))
+                return;
             updateButton.Text = "Cancel download";
             UpdateScanDisplay();
             var downloadProgress = new Progress<long>(bytes =>
@@ -88,6 +86,58 @@ sealed partial class InventoryWindow
             }
         }
         if (UpdateInstaller is not null) Close();
+    }
+
+    bool ConfirmUpdate(AppUpdates.Release release)
+    {
+        using var dialog = new Form
+        {
+            Text = $"Update available — File Inventory {release.Version}",
+            Width = 500,
+            Height = 320,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            StartPosition = FormStartPosition.CenterParent
+        };
+        var header = new Label
+        {
+            Text = $"File Inventory {release.Version} is ready to download and install.",
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Dock = DockStyle.Top,
+            Height = 32,
+            Padding = new Padding(12, 10, 12, 0)
+        };
+        var notesBox = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            Dock = DockStyle.Fill,
+            Text = string.IsNullOrWhiteSpace(release.Notes)
+                ? "No release notes provided for this version."
+                : release.Notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine)
+        };
+        var notesPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 6, 12, 6) };
+        notesPanel.Controls.Add(notesBox);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            FlowDirection = FlowDirection.RightToLeft,
+            Height = 46,
+            Padding = new Padding(12, 6, 12, 8)
+        };
+        var accept = new Button { Text = "Accept & Install Now", DialogResult = DialogResult.OK, AutoSize = true };
+        var later = new Button { Text = "Later", DialogResult = DialogResult.Cancel, AutoSize = true };
+        buttons.Controls.AddRange([later, accept]);
+
+        dialog.Controls.AddRange([notesPanel, header, buttons]);
+        dialog.AcceptButton = accept;
+        dialog.CancelButton = later;
+        dialog.Load += (_, _) => Theme.Apply(dialog, darkMode);
+        return dialog.ShowDialog(this) == DialogResult.OK;
     }
 
     void ShowUpdateProgress()
