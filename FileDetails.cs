@@ -43,6 +43,7 @@ sealed partial class InventoryWindow
             annotations.Controls.Add(annotationTags, 1, 0);
             annotations.Controls.Add(LabelFor("Note"), 0, 1);
             annotations.Controls.Add(annotationNote, 1, 1);
+            Theme.SetIcon(saveAnnotation, FluentIcon.Save);
             annotations.Controls.Add(saveAnnotation, 1, 2);
 
             var content = new Panel { Dock = DockStyle.Fill, Margin = new(0, 3, 0, 0) };
