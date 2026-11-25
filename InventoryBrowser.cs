@@ -8,6 +8,8 @@ sealed partial class InventoryWindow
     readonly Label location = new() { AutoSize = true, Padding = new Padding(6),
         MaximumSize = new Size(1200, 0) };
     readonly Button browse = new() { Text = "Browse selected folder", AutoSize = true };
+    readonly Button themeButton = new() { Text = "Dark mode", AutoSize = true };
+    bool darkMode;
     readonly Dictionary<int, List<Hit>> pageCache = new();
     readonly Dictionary<int, Task> pendingPages = new();
     readonly SemaphoreSlim pageGate = new(2);
@@ -50,7 +52,14 @@ sealed partial class InventoryWindow
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(8);
-        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton, releaseNotesButton]);
+        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton, releaseNotesButton, themeButton]);
+        themeButton.Click += (_, _) =>
+        {
+            darkMode = !darkMode;
+            themeButton.Text = darkMode ? "Light mode" : "Dark mode";
+            Theme.Apply(this, darkMode);
+        };
+        Load += (_, _) => Theme.Apply(this, darkMode);
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 4, 8, 4) };
