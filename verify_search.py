@@ -60,8 +60,9 @@ def find(db, query, **filters):
             for clause, tier, context in tiers:
                 if len(leading) == 50:
                     break
-                sql = LONG.replace("fragments", "filename_fragments") if tier == 2 else LONG
-                leading.extend(db.execute(sql, dict(params, clause=clause, tier=tier,
+                if tier == 2:
+                    clause = f"name_key : ({clause})"
+                leading.extend(db.execute(LONG, dict(params, clause=clause, tier=tier,
                                                       context=context, limit=50-len(leading))))
             return leading
     return db.execute(SEARCH, params).fetchall()
