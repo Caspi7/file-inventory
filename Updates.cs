@@ -7,6 +7,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.3
+        • Polished top Command Bar: increased height to 56px with symmetric padding so button borders never clip, added an elevated surface shade, and added a crisp 1px bottom divider line.
+
         File Inventory 1.4.2
         • Fixed oversized vertical empty space above and below the top Command Bar (now a crisp fixed 48px single-row bar).
 
