@@ -7,7 +7,43 @@ using Microsoft.Data.Sqlite;
 namespace FileInventory;
 
 record Volume(string Id, string Mount, string Label, bool Online, bool Enabled, double Hours,
-    long? Attempted, long? Succeeded, string Outcome, string Issues);
+    long? Attempted, long? Succeeded, string Outcome, string Issues,
+    string Host = "", bool Removable = false)
+{
+    public string BaseLabel => Label == Mount ? Mount : $"{Label} ({Mount})";
+    public string KindLabel => Removable ? "Removable" : "Fixed";
+
+    public string DisplayName
+    {
+        get
+        {
+            var parts = new List<string>(3) { BaseLabel };
+            if (Removable) parts.Add("Removable");
+            if (!string.IsNullOrWhiteSpace(Host)) parts.Add(Host);
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public string DisplayStatusLabel
+    {
+        get
+        {
+            string status = Id.StartsWith("import:", StringComparison.Ordinal) ? "Imported" : Online ? "" : "Offline";
+            return status.Length == 0 ? DisplayName : $"{DisplayName} · {status}";
+        }
+    }
+
+    public string DisplayLibraryLabel
+    {
+        get
+        {
+            var parts = new List<string>(4) { BaseLabel, KindLabel };
+            if (!string.IsNullOrWhiteSpace(Host)) parts.Add(Host);
+            parts.Add(Id.StartsWith("import:", StringComparison.Ordinal) ? "Imported" : Online ? "Online" : "Offline");
+            return string.Join(" · ", parts);
+        }
+    }
+}
 record Entry(string Relative, string Name, string Parent, long Bytes, long Modified, long Created,
     int Attributes, string? FileKey);
 record Hit(string Name, string FullPath, string RelativePath, string Volume, string Label, string Status,
@@ -35,6 +71,12 @@ sealed partial class Catalog
         using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('files') WHERE name='removed';"))
             if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
                 Execute(db, "ALTER TABLE files ADD COLUMN removed INTEGER;");
+        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('volumes') WHERE name='host';"))
+            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
+                Execute(db, "ALTER TABLE volumes ADD COLUMN host TEXT NOT NULL DEFAULT '';");
+        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('volumes') WHERE name='removable';"))
+            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
+                Execute(db, "ALTER TABLE volumes ADD COLUMN removable INTEGER NOT NULL DEFAULT 0;");
         BackfillFolders(db);
     }
 
@@ -95,10 +137,14 @@ sealed partial class Catalog
         Execute(db, "BEGIN IMMEDIATE;");
         Execute(db, "UPDATE volumes SET online=0;");
         foreach (var volume in mounted)
+        {
+            string host = string.IsNullOrWhiteSpace(volume.Host) ? Environment.MachineName : volume.Host;
             Execute(db, """
-                INSERT INTO volumes(id,mount,label,online) VALUES($id,$mount,$label,1)
-                ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=1;
-                """, ("id", volume.Id), ("mount", volume.Mount), ("label", volume.Label));
+                INSERT INTO volumes(id,mount,label,online,host,removable) VALUES($id,$mount,$label,1,$host,$removable)
+                ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=1,host=excluded.host,removable=excluded.removable;
+                """, ("id", volume.Id), ("mount", volume.Mount), ("label", volume.Label),
+                ("host", host), ("removable", volume.Removable ? 1 : 0));
+        }
         Execute(db, "COMMIT;");
     }
 
@@ -106,7 +152,7 @@ sealed partial class Catalog
     {
         using var db = Open();
         using var command = Command(db, """
-            SELECT id,mount,label,online,enabled,hours,attempted,succeeded,outcome,issues
+            SELECT id,mount,label,online,enabled,hours,attempted,succeeded,outcome,issues,host,removable
             FROM volumes ORDER BY online DESC,mount,label;
             """);
         using var reader = command.ExecuteReader();
@@ -114,7 +160,8 @@ sealed partial class Catalog
         while (reader.Read())
             volumes.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3),
                 reader.GetBoolean(4), reader.GetDouble(5), reader.IsDBNull(6) ? null : reader.GetInt64(6),
-                reader.IsDBNull(7) ? null : reader.GetInt64(7), reader.GetString(8), reader.GetString(9)));
+                reader.IsDBNull(7) ? null : reader.GetInt64(7), reader.GetString(8), reader.GetString(9),
+                reader.GetString(10), reader.GetBoolean(11)));
         return volumes;
     }
 
