@@ -1,15 +1,20 @@
-namespace FileInventory;
+﻿namespace FileInventory;
 
 sealed partial class InventoryWindow
 {
     readonly Button library = new() { Text = "Drive Library…", AutoSize = true };
     readonly Button searchDrive = new() { Text = "Search this drive", AutoSize = true };
     readonly CheckBox includeRemoved = new() { Text = "Show removed files", Checked = true, AutoSize = true };
+    readonly ToolTip inventoryTips = new();
     HashSet<string>? searchDrives;
     bool transferringInventory;
 
     void InitializeLibrary()
     {
+        InitializeQuickLook(inventoryTips);
+        Disposed += (_, _) => inventoryTips.Dispose();
+        Theme.AttachTooltip(library, inventoryTips, "Manage scanned drives, drive notes, and exports.");
+        Theme.AttachTooltip(searchDrive, inventoryTips, "Limit search to the current drive.");
         includeRemoved.CheckedChanged += (_, _) => { ResetTree(); QueueSearch(); };
         searchDrive.Click += (_, _) =>
         {
@@ -31,24 +36,79 @@ sealed partial class InventoryWindow
     {
         if (transferringInventory || checkingUpdates) return;
         using var window = new Form { Text = "Drive Library", StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(640, 410), MinimumSize = new Size(520, 340), Font = Font, ShowInTaskbar = false };
+            ClientSize = new Size(760, 455), MinimumSize = new Size(540, 375), Font = Font, ShowInTaskbar = false };
         var list = new CheckedListBox { CheckOnClick = true, Dock = DockStyle.Fill, IntegralHeight = false,
             AccessibleName = "Drives to include in search" };
         var scanned = volumes.Where(v => v.Succeeded is not null || v.Id.StartsWith("import:", StringComparison.Ordinal)).ToList();
         foreach (var item in scanned)
         {
-            list.Items.Add(item.DisplayLibraryLabel, searchDrives?.Contains(item.Id) ?? true);
+            list.Items.Add(DriveLibraryLabel(item), searchDrives?.Contains(item.Id) ?? true);
         }
         var selectAll = new Button { Text = "Select all", AutoSize = true };
         var clearAll = new Button { Text = "Clear all", AutoSize = true };
         var import = new Button { Text = "Import inventory…", AutoSize = true, Enabled = !benchmark };
         var export = new Button { Text = "Export selected drive…", AutoSize = true, Enabled = false };
+        var report = new Button { Text = "Export report…", AutoSize = true, Enabled = false };
+        var note = new TextBox { PlaceholderText = "e.g. Shelf B — Cold Backup", Width = 230,
+            AccessibleName = "Location note" };
+        var reminder = new NumericUpDown { Minimum = 0, Maximum = int.MaxValue, Width = 90,
+            AccessibleName = "Remind after (days), zero turns reminders off" };
+        var saveNote = new Button { Text = "Save drive note", AutoSize = true };
+        var editor = Flow();
+        editor.Controls.AddRange([LabelFor("Location note"), note, LabelFor("Remind after (days)"), reminder, saveNote]);
         var apply = new Button { Text = "Apply", AutoSize = true, DialogResult = DialogResult.OK };
         var dismiss = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
         selectAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, true); };
         clearAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, false); };
-        list.SelectedIndexChanged += (_, _) => export.Enabled = !benchmark && list.SelectedIndex >= 0;
+        void ShowDriveNote()
+        {
+            int index = list.SelectedIndex;
+            export.Enabled = report.Enabled = !benchmark && index >= 0;
+            note.Enabled = reminder.Enabled = saveNote.Enabled = index >= 0;
+            note.Text = index >= 0 ? scanned[index].Note : "";
+            reminder.Value = index >= 0 ? scanned[index].FreshnessDays : 0;
+        }
+        list.SelectedIndexChanged += (_, _) => ShowDriveNote();
+        ShowDriveNote();
+        saveNote.Click += async (_, _) =>
+        {
+            int index = list.SelectedIndex;
+            if (index < 0) return;
+            var drive = scanned[index];
+            string location = note.Text;
+            int days = (int)reminder.Value;
+            try
+            {
+                catalog.UpdateVolumeMetadata(drive.Id, location, days);
+                scanned[index] = drive with { Note = location, FreshnessDays = days };
+                bool checkedDrive = list.GetItemChecked(index);
+                list.Items[index] = DriveLibraryLabel(scanned[index]);
+                list.SetItemChecked(index, checkedDrive);
+                list.SelectedIndex = index;
+                await ReloadVolumes();
+                if (!closing) state.Text = "Drive note saved.";
+            }
+            catch (Exception ex)
+            {
+                if (!window.IsDisposed)
+                    MessageBox.Show(window, ex.Message, "Could not save drive note", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+
+        using var tips = new ToolTip();
+        Theme.AttachTooltip(selectAll, tips, "Include every listed drive in search.");
+        Theme.AttachTooltip(clearAll, tips, "Clear all drive checkboxes.");
+        Theme.AttachTooltip(import, tips, "Import a File Inventory backup.");
+        Theme.AttachTooltip(export, tips, "Export a backup of the highlighted drive.");
+        Theme.AttachTooltip(report, tips, "Export an HTML, CSV, or JSON report for the highlighted drive.");
+        Theme.AttachTooltip(saveNote, tips, "Save the location and reminder for the highlighted drive.");
+        Theme.AttachTooltip(reminder, tips, "Days since the last successful scan. Use 0 to turn reminders off.");
+        Theme.AttachTooltip(apply, tips, "Apply the checked drives to search.");
+        Theme.AttachTooltip(dismiss, tips, "Close without applying changes to the search selection.");
+
         string? transferPath = null, exportDrive = null;
+        string? reportTitle = null;
+        InventoryExportFormat? reportFormat = null;
         const string archiveFilter = "File Inventory backups (*.fiinventory)|*.fiinventory";
         import.Click += (_, _) =>
         {
@@ -72,19 +132,48 @@ sealed partial class InventoryWindow
             exportDrive = scanned[list.SelectedIndex].Id;
             window.DialogResult = DialogResult.OK;
         };
+        report.Click += (_, _) =>
+        {
+            if (list.SelectedIndex < 0) return;
+            using var picker = new SaveFileDialog
+            {
+                Filter = "Standalone HTML (*.html)|*.html|CSV (*.csv)|*.csv|JSON (*.json)|*.json",
+                AddExtension = true, Title = "Export drive inventory report"
+            };
+            if (picker.ShowDialog(window) != DialogResult.OK) return;
+            var (extension, format) = picker.FilterIndex switch
+            {
+                2 => (".csv", InventoryExportFormat.Csv),
+                3 => (".json", InventoryExportFormat.Json),
+                _ => (".html", InventoryExportFormat.Html)
+            };
+            if (!string.Equals(Path.GetExtension(picker.FileName), extension, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(window, $"Use the {extension} file extension for the selected format.", "Export report");
+                return;
+            }
+            var drive = scanned[list.SelectedIndex];
+            transferPath = picker.FileName;
+            exportDrive = drive.Id;
+            reportTitle = $"File Inventory report — {drive.BaseLabel}";
+            reportFormat = format;
+            window.DialogResult = DialogResult.OK;
+        };
         var toolbar = Flow();
-        toolbar.Controls.AddRange([selectAll, clearAll, import, export]);
+        toolbar.Controls.AddRange([selectAll, clearAll, import, export, report]);
         var actions = Flow();
         actions.FlowDirection = FlowDirection.RightToLeft;
         actions.Controls.AddRange([apply, dismiss]);
-        var layout = Stack(4);
+        var layout = Stack(5);
         layout.Controls.Add(LabelFor("Choose which scanned or imported drives to search."), 0, 0);
         layout.Controls.Add(toolbar, 0, 1);
         layout.Controls.Add(list, 0, 2);
-        layout.Controls.Add(actions, 0, 3);
+        layout.Controls.Add(editor, 0, 3);
+        layout.Controls.Add(actions, 0, 4);
         layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.Percent, 100));
+        layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.AutoSize));
         window.Controls.Add(layout);
         window.AcceptButton = apply;
@@ -92,20 +181,25 @@ sealed partial class InventoryWindow
         window.Load += (_, _) => Theme.Apply(window, currentTheme);
         if (window.ShowDialog(this) != DialogResult.OK) return;
         var selected = list.CheckedIndices.Cast<int>().Select(i => scanned[i].Id).ToHashSet(StringComparer.Ordinal);
-        ApplySearchDrives(selected.Count == scanned.Count ? null : selected);
+        if (reportFormat is null) ApplySearchDrives(selected.Count == scanned.Count ? null : selected);
         if (transferPath is null) return;
 
         transferringInventory = true;
         library.Enabled = false;
         try
         {
-            state.Text = exportDrive is null ? "Importing inventory…" : "Exporting inventory…";
+            state.Text = reportFormat is not null ? "Exporting report…"
+                : exportDrive is null ? "Importing inventory…" : "Exporting inventory…";
             if (exportDrive is not null)
             {
-                await Task.Run(() => catalog.ExportInventory(exportDrive, transferPath));
+                if (reportFormat is { } format)
+                    await Task.Run(() => WriteDriveReport(exportDrive, transferPath, format, reportTitle!));
+                else
+                    await Task.Run(() => catalog.ExportInventory(exportDrive, transferPath));
                 if (!closing) MessageBox.Show(this,
                     $"Saved {Path.GetFileName(transferPath)} ({new FileInfo(transferPath).Length / 1_000_000.0:N2} MB).",
                     "Export complete");
+                if (!closing && reportFormat is not null) state.Text = "Drive report exported.";
             }
             else
             {
@@ -124,4 +218,99 @@ sealed partial class InventoryWindow
         }
         finally { transferringInventory = false; if (!closing) library.Enabled = true; }
     }
+
+    static string DriveLibraryLabel(Volume volume) =>
+        volume.DisplayLibraryLabel + (volume.IsOverdue(Catalog.Now()) ? " · Overdue" : "");
+
+    void WriteDriveReport(string driveId, string destination, InventoryExportFormat format, string title)
+    {
+        string? template = null;
+        string? temporaryTemplate = null;
+        try
+        {
+            if (format == InventoryExportFormat.Html)
+            {
+                template = Path.Combine(AppContext.BaseDirectory, "ReportTemplate.html");
+                if (!File.Exists(template))
+                {
+                    // Single-file builds do not ship the source template beside the executable.
+                    temporaryTemplate = Path.GetTempFileName();
+                    File.WriteAllText(temporaryTemplate, StandaloneReportTemplate);
+                    template = temporaryTemplate;
+                }
+            }
+            InventoryExport.Write(destination, Rows(), format, title, template);
+        }
+        finally
+        {
+            if (temporaryTemplate is not null) File.Delete(temporaryTemplate);
+        }
+
+        IEnumerable<Hit> Rows()
+        {
+            const int batchSize = 1024;
+            var ids = catalog.IndexSearch("", new Filters(Volume: driveId), CancellationToken.None);
+            for (int offset = 0; offset < ids.Count; offset += batchSize)
+                foreach (var hit in catalog.ReadSearchPage("", ids, offset, batchSize, CancellationToken.None))
+                    if (hit is not null) yield return hit;
+        }
+    }
+
+    // Keep in sync with ReportTemplate.html for deployments without a loose template.
+    const string StandaloneReportTemplate = """
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>{{TITLE}}</title>
+      <style>
+        :root { color-scheme: light dark; }
+        body { margin: 2rem auto; padding: 0 1rem; max-width: 100rem; font: 1rem/1.5 system-ui, sans-serif; }
+        h1 { margin: 0 0 1rem; }
+        .table { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
+        th, td { padding: .5rem .75rem; border-bottom: 1px solid GrayText; vertical-align: top; }
+        th { white-space: nowrap; }
+        td { overflow-wrap: anywhere; }
+        td:nth-child(7) { text-align: right; font-variant-numeric: tabular-nums; }
+        tbody tr:nth-child(even) { background: color-mix(in srgb, CanvasText 6%, Canvas); }
+        @media print {
+          body { margin: 0; padding: 0; }
+          .table { overflow: visible; }
+          table { table-layout: fixed; font-size: 8pt; }
+          th { white-space: normal; }
+          th, td { padding: .2rem; }
+          tr { break-inside: avoid; }
+        }
+      </style>
+    </head>
+    <body>
+      <main>
+        <h1 id="report-title">{{TITLE}}</h1>
+        <div class="table" role="region" aria-labelledby="report-title" tabindex="0">
+          <table aria-labelledby="report-title">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Full path</th>
+                <th scope="col">Relative path</th>
+                <th scope="col">Volume ID</th>
+                <th scope="col">Drive label</th>
+                <th scope="col">Status</th>
+                <th scope="col">Bytes</th>
+                <th scope="col">Modified</th>
+                <th scope="col">Last seen</th>
+                <th scope="col">Kind</th>
+              </tr>
+            </thead>
+            <tbody>
+    {{ROWS}}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </body>
+    </html>
+    """;
 }
