@@ -59,8 +59,11 @@ static class WindowsVolumes
     {
         var label = new StringBuilder(261);
         GetVolumeInformationW(mount, label, (uint)label.Capacity, out _, out _, out _, null, 0);
+        bool removable = false;
+        try { removable = new DriveInfo(mount).DriveType == DriveType.Removable; }
+        catch (Exception) { }
         return new(id, mount, label.Length == 0 ? mount : label.ToString(), true, false, 24,
-            null, null, "", "");
+            null, null, "", "", Environment.MachineName, removable);
     }
 
     public static string? Identity(string mount)
