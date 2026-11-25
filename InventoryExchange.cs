@@ -9,6 +9,7 @@ sealed partial class Catalog
 {
     const string ImportedPrefix = "import:";
     const string ArchiveFormat = "FileInventory";
+    static ReadOnlySpan<byte> BrotliMagic => "FINVBR1"u8;
     static readonly UTF8Encoding ArchiveEncoding = new(false, true);
     sealed record ArchiveHeader(string Format, int Version, string Id, string Label, string Mount,
         string? Host = null, bool Removable = false, string? Note = null);
@@ -38,14 +39,15 @@ sealed partial class Catalog
         try
         {
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write))
-            using (var gzip = new GZipStream(file, CompressionLevel.Optimal))
-            using (var writer = new StreamWriter(gzip, ArchiveEncoding))
-            using (var command = Command(db, """
-                SELECT rel,bytes,created,modified,attributes,seen,stale,removed
-                FROM files WHERE volume=$drive ORDER BY rel;
-                """, ("drive", drive)))
-            using (var reader = command.ExecuteReader())
             {
+                file.Write(BrotliMagic);
+                using var brotli = new BrotliStream(file, CompressionLevel.Optimal);
+                using var writer = new StreamWriter(brotli, ArchiveEncoding);
+                using var command = Command(db, """
+                    SELECT rel,bytes,created,modified,attributes,seen,stale,removed
+                    FROM files WHERE volume=$drive ORDER BY rel;
+                    """, ("drive", drive));
+                using var reader = command.ExecuteReader();
                 writer.WriteLine(JsonSerializer.Serialize(header));
                 long count = 0;
                 var values = new object[8];
@@ -67,8 +69,14 @@ sealed partial class Catalog
     public string ImportInventory(string source)
     {
         using var file = File.OpenRead(source);
-        using var gzip = new GZipStream(file, CompressionMode.Decompress);
-        using var reader = new StreamReader(gzip, ArchiveEncoding, detectEncodingFromByteOrderMarks: false);
+        Span<byte> magic = stackalloc byte[BrotliMagic.Length];
+        int bytesRead = file.ReadAtLeast(magic, magic.Length, throwOnEndOfStream: false);
+        bool isBrotli = magic[..bytesRead].SequenceEqual(BrotliMagic);
+        if (!isBrotli) file.Position = 0;
+        using Stream decompressor = isBrotli
+            ? new BrotliStream(file, CompressionMode.Decompress)
+            : new GZipStream(file, CompressionMode.Decompress);
+        using var reader = new StreamReader(decompressor, ArchiveEncoding, detectEncodingFromByteOrderMarks: false);
         var header = JsonSerializer.Deserialize<ArchiveHeader>(ReadArchiveLine(reader) ?? "null");
         if (header is null || header.Format != ArchiveFormat || header.Version != 1
             || header.Id is not { Length: 64 } || !header.Id.All(Uri.IsHexDigit)
