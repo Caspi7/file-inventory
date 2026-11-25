@@ -7,6 +7,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.5
+        • Deep Search skips system and common development folders by default and uses shorter scan option labels with descriptive tooltips.
+        • Content scans and repeat drive scans show percentage and estimated time remaining.
+
         File Inventory 1.4.4
         • Styled top Command Bar buttons as flush top-rounded tabs that meet the Command Bar's bottom divider seamlessly with no bottom gap or double border.
 
