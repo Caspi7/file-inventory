@@ -96,6 +96,9 @@ sealed class Scanner(Catalog catalog)
                     ($rel,$name,$key,$parent,$ext,$bytes,$modified,$created,$attributes,$identity,$tokens);
                     """, ("rel", null), ("name", null), ("key", null), ("parent", null), ("ext", null),
                      ("bytes", 0), ("modified", 0), ("created", 0), ("attributes", 0), ("identity", null), ("tokens", "[]"));
+                using var cover = Catalog.Command(stage,
+                    "INSERT OR REPLACE INTO coverage VALUES($path,$complete,$detail);",
+                    ("path", null), ("complete", 0), ("detail", null));
                 var pending = new Stack<string>();
                 pending.Push("");
                 var options = new EnumerationOptions
@@ -104,6 +107,8 @@ sealed class Scanner(Catalog catalog)
                     ReturnSpecialDirectories = false, BufferSize = 64 * 1024
                 };
                 item.Prepare();
+                cover.Prepare();
+                var tokenBuffer = new List<string>();
                 long previousReport = 0;
                 while (pending.TryPop(out var directory))
                 {
@@ -152,13 +157,32 @@ sealed class Scanner(Catalog catalog)
                             }
 
                             var name = Catalog.Key(entry.Name);
-                            var tokens = JsonSerializer.Serialize(parentTokens.Concat(
-                                Catalog.Prefixes(name, "").Where(t => !parentTokenSet.Contains(t))));
-                            object?[] values = [entry.Relative, entry.Name, name, parentKey,
-                                isDirectory ? "" : Catalog.Key(Path.GetExtension(entry.Name).TrimStart('.')), isDirectory ? 0L : entry.Bytes,
-                                entry.Modified, entry.Created, entry.Attributes, identity, tokens];
-                            for (int i = 0; i < values.Length; i++)
-                                item.Parameters[i].Value = values[i] ?? DBNull.Value;
+                            tokenBuffer.Clear();
+                            tokenBuffer.AddRange(parentTokens);
+                            foreach (var t in Catalog.Prefixes(name, ""))
+                            {
+                                if (!parentTokenSet.Contains(t))
+                                    tokenBuffer.Add(t);
+                            }
+                            var tokens = JsonSerializer.Serialize(tokenBuffer);
+                            string ext = "";
+                            if (!isDirectory)
+                            {
+                                var extSpan = Path.GetExtension(entry.Name.AsSpan()).TrimStart('.');
+                                if (!extSpan.IsEmpty)
+                                    ext = Catalog.Key(extSpan.ToString());
+                            }
+                            item.Parameters[0].Value = entry.Relative;
+                            item.Parameters[1].Value = entry.Name;
+                            item.Parameters[2].Value = name;
+                            item.Parameters[3].Value = parentKey;
+                            item.Parameters[4].Value = ext;
+                            item.Parameters[5].Value = isDirectory ? 0L : entry.Bytes;
+                            item.Parameters[6].Value = entry.Modified;
+                            item.Parameters[7].Value = entry.Created;
+                            item.Parameters[8].Value = entry.Attributes;
+                            item.Parameters[9].Value = (object?)identity ?? DBNull.Value;
+                            item.Parameters[10].Value = tokens;
                             item.ExecuteNonQuery();
                             count++;
                             if (count % 20000 == 0) Catalog.Execute(stage, "COMMIT; BEGIN IMMEDIATE;");
@@ -187,8 +211,10 @@ sealed class Scanner(Catalog catalog)
                 void Cover(string directory, string? detail, bool complete)
                 {
                     if (!complete) Issue(directory, detail!);
-                    Catalog.Execute(stage, "INSERT OR REPLACE INTO coverage VALUES($path,$complete,$detail);",
-                        ("path", directory), ("complete", complete), ("detail", detail));
+                    cover.Parameters[0].Value = directory;
+                    cover.Parameters[1].Value = complete ? 1 : 0;
+                    cover.Parameters[2].Value = (object?)detail ?? DBNull.Value;
+                    cover.ExecuteNonQuery();
                 }
             }
 
