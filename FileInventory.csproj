@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <Version>1.2.14</Version>
+    <Version>1.2.15</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ApplicationIcon>Assets\FileInventory.ico</ApplicationIcon>
     <UseWindowsForms>true</UseWindowsForms>
