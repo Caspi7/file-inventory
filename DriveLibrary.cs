@@ -28,8 +28,13 @@ sealed partial class InventoryWindow
     {
         searchDrives = selected;
         library.Text = selected is null ? "Drive Library…" : $"Drive Library ({selected.Count} selected)…";
-        QueueSearch();
-        query.Focus();
+        bool scopeChanged = ReloadBrowseScope();
+        if (!restoring)
+        {
+            if (scopeChanged) SelectBrowserDrive();
+            else QueueSearch();
+            query.Focus();
+        }
     }
 
     async Task OpenDriveLibrary()
@@ -39,6 +44,7 @@ sealed partial class InventoryWindow
             ClientSize = new Size(760, 455), MinimumSize = new Size(540, 375), Font = Font, ShowInTaskbar = false };
         var list = new CheckedListBox { CheckOnClick = true, Dock = DockStyle.Fill, IntegralHeight = false,
             AccessibleName = "Drives to include in search" };
+        // Use the full catalog so excluded drives can always be checked again.
         var scanned = volumes.Where(v => v.Succeeded is not null || v.Id.StartsWith("import:", StringComparison.Ordinal)).ToList();
         foreach (var item in scanned)
         {
