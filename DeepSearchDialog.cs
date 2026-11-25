@@ -11,10 +11,14 @@ sealed class DeepSearchDialog : Form
     readonly ToolTip tips = new();
     readonly System.Windows.Forms.Timer estimateTimer = new() { Interval = 250 };
     readonly TextBox query = new() { Dock = DockStyle.Fill, AccessibleName = "Search text inside files",
-        PlaceholderText = "Search text inside PDF, DOCX, XLSX, PPTX, and text/code files…" };
+        PlaceholderText = "Search inside files… e.g. (invoice OR receipt) 2025 -draft  or describe what you're looking for" };
     readonly TextBox extension = new() { Width = 100, AccessibleName = "Extension",
         PlaceholderText = "Extension" };
     readonly ComboBox searchDrive = Selector("Search drive", 155);
+    readonly ComboBox matchMode = new() { AccessibleName = "Match mode", Width = 185,
+        DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly CheckBox fuzzy = Option("Typo-tolerant");
+    readonly FlowLayoutPanel searchTools = Row();
     readonly ComboBox scanDrive = Selector("Scan drive", 175);
     readonly ComboBox resourceMode = Selector("Resource mode", 310);
     readonly CheckBox text = Option("Text & Code");
@@ -22,7 +26,9 @@ sealed class DeepSearchDialog : Form
     readonly CheckBox pdf = Option("PDF");
     readonly CheckBox snippets = Option("Offline excerpts");
     readonly CheckBox skipSystemFolders = Option("Skip system folders");
-    readonly Label status = Line("Enter text to search the content index.");
+    readonly Label status = new() { Text = "Enter text to search the content index.",
+        Height = 23, Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
+        UseMnemonic = false };
     readonly Label estimate = Line("Estimating eligible files…");
     readonly Label progressText = Line("Ready to scan.");
     readonly ListView results = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
@@ -73,6 +79,11 @@ sealed class DeepSearchDialog : Form
         results.Columns.Add("Excerpt", 325);
         results.Columns.Add("Size", 82, HorizontalAlignment.Right);
         results.Columns.Add("Modified", 135);
+        results.ClientSizeChanged += (_, _) =>
+        {
+            int reserved = results.Columns.Cast<ColumnHeader>().Where((_, index) => index != 2).Sum(column => column.Width);
+            results.Columns[2].Width = Math.Max(100, results.ClientSize.Width - reserved - SystemInformation.VerticalScrollBarWidth);
+        };
 
         var criteria = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4 };
         criteria.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -82,9 +93,28 @@ sealed class DeepSearchDialog : Form
         criteria.Controls.Add(extension, 2, 0);
         criteria.Controls.Add(search, 3, 0);
 
+        matchMode.Items.AddRange(["Smart (Boolean + Close)", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]);
+        matchMode.SelectedIndex = (int)ContentMatchMode.Smart;
+        var matchLabel = Line("Match");
+        searchTools.AccessibleName = "Search Tools";
+        searchTools.WrapContents = true;
+        fuzzy.Padding = Padding.Empty;
+        foreach (var control in new Control[] { matchLabel, matchMode, fuzzy })
+        {
+            control.Anchor = AnchorStyles.Left;
+            searchTools.Controls.Add(control);
+        }
+        AddSearchTool("+ AND", "Require both sides of the AND operator.", () => InsertSyntax(" AND "));
+        AddSearchTool("+ OR", "Match either side of the OR operator.", () => InsertSyntax(" OR "));
+        AddSearchTool("+ Exclude", "Exclude a word, phrase, or group after a minus sign.", () => InsertSyntax(" -"));
+        AddSearchTool("\"Phrase\"", "Wrap selected text in quotes to match words together in order.", () => InsertSyntax("\"", "\""));
+        AddSearchTool("(Group)", "Wrap selected text in parentheses to combine conditions.", () => InsertSyntax("(", ")"));
+        AddSearchTool("? Tips", "Show examples for Boolean, wildcard, typo-tolerant, and descriptive searches.", ShowSearchTips);
+
         var searchArea = new GroupBox { Text = "Search Inside Files", Dock = DockStyle.Fill, Padding = new Padding(9) };
         var searchLayout = Stack();
         AddRow(searchLayout, criteria);
+        AddRow(searchLayout, searchTools);
         AddRow(searchLayout, status);
         AddRow(searchLayout, results, SizeType.Percent);
         AddRow(searchLayout, Row(copy, reveal));
@@ -98,13 +128,25 @@ sealed class DeepSearchDialog : Form
         optionsRow.WrapContents = true;
         AddRow(scanLayout, optionsRow);
         AddRow(scanLayout, estimate);
-        AddRow(scanLayout, Row(scan, cancel, progress));
-        AddRow(scanLayout, progressText);
-        AddRow(scanLayout, Row(sync, export, import));
+        var scanActions = Row(scan, cancel, sync, export, import);
+        scanActions.WrapContents = true;
+        AddRow(scanLayout, scanActions);
+        var scanProgress = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        scanProgress.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        scanProgress.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        progress.Anchor = AnchorStyles.Left;
+        progressText.AutoSize = false;
+        progressText.Dock = DockStyle.Fill;
+        progressText.AutoEllipsis = true;
+        progressText.TextAlign = ContentAlignment.MiddleLeft;
+        progressText.Height = 23;
+        scanProgress.Controls.Add(progress, 0, 0);
+        scanProgress.Controls.Add(progressText, 1, 0);
+        AddRow(scanLayout, scanProgress);
         scanArea.Controls.Add(scanLayout);
 
         var layout = Stack();
-        layout.Padding = new Padding(12);
+        layout.Padding = new Padding(9);
         AddRow(layout, searchArea, SizeType.Percent);
         AddRow(layout, scanArea);
         Controls.Add(layout);
@@ -117,6 +159,10 @@ sealed class DeepSearchDialog : Form
             (searchDrive, "Search all indexed drives or limit results to one drive, including offline drives."),
             (extension, "Optionally limit results to a file extension such as .pdf."),
             (search, "Search the indexed contents using the current drive and extension filters."),
+            (searchTools, "Choose how search terms match and insert search operators at the cursor."),
+            (matchLabel, "Controls how keywords are combined in the search."),
+            (matchMode, "Smart can rank close matches. Choose all keywords, any keyword, or an exact phrase for a stricter search."),
+            (fuzzy, "Look for close spellings of words the index did not find, including adjacent letters typed out of order."),
             (status, "Shows search timing, returned matches, and the size of the content index."),
             (results, "Select a match to copy its path or reveal it on an online drive."),
             (copy, "Copy the full path of the selected match."),
@@ -140,6 +186,8 @@ sealed class DeepSearchDialog : Form
         foreach (var (control, help) in descriptions) Theme.AttachTooltip(control, tips, help);
 
         search.Click += async (_, _) => await RunAsync(SearchAsync, status);
+        matchMode.SelectedIndexChanged += async (_, _) => await SearchOptionsChangedAsync();
+        fuzzy.CheckedChanged += async (_, _) => await SearchOptionsChangedAsync();
         copy.Click += (_, _) => { if (SelectedHit is { } hit) UiHelpers.CopyText(hit.FullPath, this); };
         reveal.Click += (_, _) => { if (SelectedHit is { Online: true } hit) UiHelpers.RevealInExplorer(hit.FullPath, this); };
         results.SelectedIndexChanged += (_, _) => UpdateActions();
@@ -155,6 +203,10 @@ sealed class DeepSearchDialog : Form
         Load += async (_, _) =>
         {
             Theme.Apply(this, theme);
+            foreach (var button in searchTools.Controls.OfType<Button>())
+                button.Padding = new Padding(4, 1, 4, 1);
+            foreach (var button in new[] { search, copy, reveal, scan, cancel, sync, export, import })
+                button.Padding = new Padding(button.Padding.Left, 2, button.Padding.Right, 2);
             Theme.StyleToolTip(tips);
             QueueEstimate();
             await RunAsync(SearchAsync, status);
@@ -168,6 +220,46 @@ sealed class DeepSearchDialog : Form
         };
         UpdateActions();
     }
+
+    Task SearchOptionsChangedAsync() => string.IsNullOrWhiteSpace(query.Text)
+        ? Task.CompletedTask : RunAsync(SearchAsync, status);
+
+    void AddSearchTool(string label, string help, Action action)
+    {
+        var button = new Button { Text = label, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Anchor = AnchorStyles.Left, Margin = new Padding(2), UseMnemonic = false };
+        button.Click += (_, _) => action();
+        searchTools.Controls.Add(button);
+        Theme.AttachTooltip(button, tips, help);
+    }
+
+    void InsertSyntax(string opening, string? closing = null)
+    {
+        int start = query.SelectionStart;
+        string selection = query.SelectedText;
+        if (closing is null)
+        {
+            query.SelectionLength = 0;
+            query.SelectedText = opening;
+        }
+        else
+        {
+            query.SelectedText = opening + selection + closing;
+        }
+        query.SelectionStart = start + opening.Length;
+        query.SelectionLength = closing is null ? 0 : selection.Length;
+        query.Focus();
+    }
+
+    void ShowSearchTips() => MessageBox.Show(this, """
+        All words: invoice 2025 (or invoice AND 2025)
+        Any word: invoice OR receipt
+        Combinations: (invoice OR receipt) AND 2025 -draft
+        Exact phrase: "quarterly tax report"
+        Wildcard prefix: invoic*
+        Typo-tolerant: invoce finds invoice automatically
+        Descriptive: quarterly tax invoice from accountant finds the closest matching documents in Smart mode
+        """, "Deep Search Tips", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
     ContentSearchHit? SelectedHit => results.SelectedItems.Count == 1
         ? results.SelectedItems[0].Tag as ContentSearchHit : null;
@@ -252,6 +344,7 @@ sealed class DeepSearchDialog : Form
     void UpdateActions()
     {
         search.Enabled = scan.Enabled = sync.Enabled = export.Enabled = import.Enabled = !busy;
+        searchTools.Enabled = !busy;
         scanDrive.Enabled = resourceMode.Enabled = text.Enabled = office.Enabled = pdf.Enabled = snippets.Enabled = !busy;
         skipSystemFolders.Enabled = !busy;
         cancel.Enabled = scanCancellation is { IsCancellationRequested: false };
@@ -284,13 +377,16 @@ sealed class DeepSearchDialog : Form
         string input = query.Text.Trim();
         string? drive = DriveId(searchDrive);
         string ext = extension.Text.Trim().TrimStart('.');
+        var options = new ContentSearchOptions((ContentMatchMode)matchMode.SelectedIndex, fuzzy.Checked);
         status.Text = "Reading the content index…";
-        var (hits, elapsed, stats) = await Task.Run(() =>
+        var (result, elapsed, stats) = await Task.Run(() =>
         {
             var watch = Stopwatch.StartNew();
-            var matches = ContentIndex.Search(catalog, input, drive, ext.Length == 0 ? null : ext, ResultLimit + 1);
+            var matches = ContentIndex.SearchDetailed(catalog, input, drive, ext.Length == 0 ? null : ext,
+                ResultLimit + 1, options);
             return (matches, watch.ElapsedMilliseconds, contentIndex.GetStats());
         });
+        var hits = result.Hits;
         results.BeginUpdate();
         try
         {
@@ -307,7 +403,12 @@ sealed class DeepSearchDialog : Form
         string matchesText = input.Length == 0 ? "Enter text to search" : hits.Count > ResultLimit
             ? $"Showing first {ResultLimit:N0} matches in {elapsed:N0} ms"
             : $"{hits.Count:N0} matches in {elapsed:N0} ms";
-        status.Text = $"{matchesText} · {stats.IndexedFiles:N0} files indexed ({UiHelpers.FormatBytes(stats.DatabaseBytes)})";
+        string closeMatch = result.UsedRelaxedMatch ? " · Close match" : "";
+        string typoMatch = result.FuzzyCorrections.Count > 0 ? $" · Typo match: {result.FuzzyCorrections[0]}" : "";
+        if (result.FuzzyCorrections.Count > 1) typoMatch += $" (+{result.FuzzyCorrections.Count - 1})";
+        status.Text = $"{matchesText}{closeMatch}{typoMatch} · {stats.IndexedFiles:N0} files indexed ({UiHelpers.FormatBytes(stats.DatabaseBytes)})";
+        tips.SetToolTip(status, status.Text + (result.Summary.Length > 0 ? Environment.NewLine + result.Summary : "") +
+            (result.FuzzyCorrections.Count > 1 ? Environment.NewLine + string.Join(", ", result.FuzzyCorrections) : ""));
     }
 
     async Task ScanAsync()
