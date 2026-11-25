@@ -5,10 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.7\n\n" +
-        "• Faster indexing and smaller SQLite catalog size (removed redundant files_parent index and duplicate filename_fragments FTS5 table).\n" +
-        "• Smaller single-file compressed Windows executable.\n" +
-        "• Added Elastic License 2.0 (LICENSE) and in-app release notes.";
+        "File Inventory 1.2.8\n\n" +
+        "• Modern Win11/macOS-style UI with Light/Dark mode toggle and updated logo.\n" +
+        "• In-app and updater release notes.\n" +
+        "• Faster indexing, smaller SQLite catalog, and smaller single-file executable.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
