@@ -8,8 +8,13 @@ sealed partial class InventoryWindow
     readonly Label location = new() { AutoSize = true, Padding = new Padding(6),
         MaximumSize = new Size(1200, 0) };
     readonly Button browse = new() { Text = "Browse selected folder", AutoSize = true };
-    readonly Button themeButton = new() { Text = "Theme: Light", AutoSize = true };
-    AppTheme currentTheme = AppTheme.Light;
+    readonly Button themeButton = new() { AutoSize = true };
+    readonly Button duplicatesButton = new() { Text = "Duplicates…", AutoSize = true };
+    readonly Button changesButton = new() { Text = "Changes…", AutoSize = true };
+    readonly Button savedSearchButton = new() { Text = "Saved searches ▾", AutoSize = true };
+    readonly Button saveSearchButton = new() { Text = "★", AccessibleName = "Save search", AutoSize = true };
+    readonly ToolTip tips = new();
+    AppTheme currentTheme = AppTheme.System;
     readonly Dictionary<int, List<Hit>> pageCache = new();
     readonly Dictionary<int, Task> pendingPages = new();
     readonly SemaphoreSlim pageGate = new(2);
@@ -55,34 +60,38 @@ sealed partial class InventoryWindow
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(10, 8, 10, 6);
-        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, syncButton, syncSettingsButton, searchDrive, updateButton, releaseNotesButton, themeButton]);
+        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library,
+            duplicatesButton, changesButton, syncButton, syncSettingsButton, searchDrive, updateButton,
+            releaseNotesButton, themeButton]);
         foreach (Control item in toolbar.Controls)
             item.Margin = item is Label ? new Padding(2, 8, 6, 2) : new Padding(0, 2, 6, 2);
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
-        themeButton.Text = currentTheme switch
+        themeButton.Text = $"Theme: {ThemeName(currentTheme)}";
+        themeButton.Click += (_, _) => SetTheme(currentTheme switch
         {
-            AppTheme.Dark => "Theme: Dark",
-            AppTheme.DarkBlue => "Theme: Dark Blue",
-            _ => "Theme: Light"
-        };
-        themeButton.Click += (_, _) =>
+            AppTheme.System => AppTheme.Light,
+            AppTheme.Light => AppTheme.Dark,
+            AppTheme.Dark => AppTheme.DarkBlue,
+            _ => AppTheme.System
+        });
+        Load += (_, _) =>
         {
-            currentTheme = currentTheme switch
-            {
-                AppTheme.Light => AppTheme.Dark,
-                AppTheme.Dark => AppTheme.DarkBlue,
-                _ => AppTheme.Light
-            };
-            themeButton.Text = currentTheme switch
-            {
-                AppTheme.Dark => "Theme: Dark",
-                AppTheme.DarkBlue => "Theme: Dark Blue",
-                _ => "Theme: Light"
-            };
-            Theme.SavePreference(catalog.DataDirectory, currentTheme);
             Theme.Apply(this, currentTheme);
+            Theme.StyleToolTip(tips);
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged += FollowSystemTheme;
         };
-        Load += (_, _) => Theme.Apply(this, currentTheme);
+        duplicatesButton.Click += (_, _) =>
+        {
+            using var dialog = new DuplicatesDialog(catalog, currentTheme, selectedId);
+            dialog.ShowDialog(this);
+        };
+        changesButton.Click += (_, _) =>
+        {
+            using var dialog = new ScanHistoryDialog(catalog, currentTheme, selectedId);
+            dialog.ShowDialog(this);
+        };
+        savedSearchButton.Click += (_, _) => ShowSavedSearches();
+        saveSearchButton.Click += (_, _) => SaveCurrentSearch();
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 2, 12, 4) };
@@ -101,11 +110,18 @@ sealed partial class InventoryWindow
         };
         scanUiTimer.Tick += (_, _) => UpdateScanDisplay();
         scanUiTimer.Start();
-        FormClosed += (_, _) => { scanUiTimer.Dispose(); pageCancellation.Dispose(); };
+        FormClosed += (_, _) =>
+        {
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= FollowSystemTheme;
+            tips.Dispose();
+            scanUiTimer.Dispose();
+            pageCancellation.Dispose();
+        };
         var filters = Flow();
         filters.Padding = new Padding(4, 4, 4, 4);
         filters.Controls.AddRange([query, status, LabelFor("Extension"), extension,
-            LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"), through, includeRemoved]);
+            LabelFor("Size in bytes"), min, max, LabelFor("Modified from"), from, LabelFor("Through"),
+            through, includeRemoved, savedSearchButton, saveSearchButton]);
         foreach (Control item in filters.Controls)
             item.Margin = item is Label ? new Padding(6, 7, 4, 4)
                 : item is CheckBox ? new Padding(8, 6, 4, 4)
@@ -162,6 +178,7 @@ sealed partial class InventoryWindow
         layout.RowStyles.Add(new(SizeType.AutoSize));
         layout.RowStyles.Add(new(SizeType.Percent, 100));
         Controls.Add(layout);
+        AttachBrowserTooltips();
 
         var icons = new ImageList { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
         var folder = new Bitmap(16, 16);
@@ -245,6 +262,182 @@ sealed partial class InventoryWindow
             e.Handled = true;
             await LocateCurrentHit();
         };
+    }
+
+    static string ThemeName(AppTheme theme) => theme == AppTheme.DarkBlue ? "Dark Blue" : theme.ToString();
+
+    void SetTheme(AppTheme theme)
+    {
+        currentTheme = theme;
+        themeButton.Text = $"Theme: {ThemeName(theme)}";
+        Theme.SavePreference(catalog.DataDirectory, theme);
+        Theme.Apply(this, theme);
+        Theme.StyleToolTip(tips);
+    }
+
+    void FollowSystemTheme(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (currentTheme != AppTheme.System || !IsHandleCreated || IsDisposed) return;
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (!closing && currentTheme == AppTheme.System)
+                {
+                    Theme.Apply(this, currentTheme);
+                    Theme.StyleToolTip(tips);
+                }
+            });
+        }
+        catch (InvalidOperationException) when (!IsHandleCreated || IsDisposed || closing) { }
+    }
+
+    void AttachBrowserTooltips()
+    {
+        inventoryTips.SetToolTip(library, "");
+        inventoryTips.SetToolTip(searchDrive, "");
+        (Control Control, string Text)[] descriptions =
+        [
+            (scope, "Choose a drive or browse all cataloged drives."),
+            (refresh, "Choose online drives to scan or refresh (F5)."),
+            (cancel, "Stop the active drive scan."),
+            (browse, "Show the contents of the selected folder in the results."),
+            (library, "Manage scanned drives, search scope, drive notes, and exports (Ctrl+D)."),
+            (duplicatesButton, "Find matching files across drives and verify copies with SHA-256."),
+            (changesButton, "Review scan history and see which files changed between scans."),
+            (syncButton, "Sync inventory snapshots using your configured folder (Ctrl+Shift+S)."),
+            (syncSettingsButton, "Configure your sync folder, automatic sync, and encryption."),
+            (searchDrive, "Limit filename searches to the drive selected above."),
+            (updateButton, "Check for a newer File Inventory release."),
+            (releaseNotesButton, "Read the release notes and version history."),
+            (themeButton, "Cycle through System, Light, Dark, and Dark Blue themes."),
+            (query, "Search names across drives (Ctrl+F or Ctrl+L). Use ext:, drive:, min:, max:, after:, before:, online:, or removed: for structured filters."),
+            (status, "Filter results by whether the drive is online or offline."),
+            (extension, "Filter by file extension, such as .pdf."),
+            (min, "Set the minimum file size in bytes."),
+            (max, "Set the maximum file size in bytes."),
+            (from, "Enable a lower bound for the file modification date."),
+            (through, "Enable an inclusive upper bound for the file modification date."),
+            (includeRemoved, "Include files marked removed by a later scan."),
+            (savedSearchButton, "Apply or delete a named saved search."),
+            (saveSearchButton, "Save the current query and filters under a name."),
+            (tree, "Expand folders to browse the inventory. Select an item to see its details."),
+            (results, "Select a result for Quick Look. Press Enter to locate it in the tree."),
+            (enabled, "Enable automatic rescans for the selected drive when it is online."),
+            (hours, "Set the number of hours between scheduled scan attempts."),
+            (saveSchedule, "Save the selected drive’s refresh schedule."),
+            (copy, "Copy the selected result’s full path to the clipboard."),
+            (reveal, "Open File Explorer and select the result at its current location."),
+            (candidates, "Find possible copies on other drives using file size and timestamps."),
+            (scanBar, "Shows the progress of the current scan or update."),
+            (searchProgress, "Indicates that the inventory search is running."),
+            (details, "Shows the selected drive’s scan status and details."),
+            (fileDetailsText, "Shows the selected file or folder’s metadata.")
+        ];
+        foreach (var (control, description) in descriptions)
+            Theme.AttachTooltip(control, tips, description);
+    }
+
+    void ShowSavedSearches()
+    {
+        try
+        {
+            var searches = savedSearches.Load();
+            var menu = new ContextMenuStrip();
+            menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+            if (searches.Count == 0)
+                menu.Items.Add(new ToolStripMenuItem("No saved searches") { Enabled = false });
+            foreach (var search in searches)
+            {
+                var item = new ToolStripMenuItem(search.Name.Replace("&", "&&"));
+                item.DropDownItems.Add("Apply", null, (_, _) => ApplySavedSearch(search));
+                item.DropDownItems.Add("Delete…", null, (_, _) =>
+                {
+                    if (MessageBox.Show(this, $"Delete “{search.Name}”?", "Saved searches",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                    try { savedSearches.Delete(search.Name); }
+                    catch (Exception ex) { state.Text = ex.Message; }
+                });
+                menu.Items.Add(item);
+            }
+            menu.Show(savedSearchButton, new Point(0, savedSearchButton.Height));
+        }
+        catch (Exception ex) { state.Text = ex.Message; }
+    }
+
+    void SaveCurrentSearch()
+    {
+        try
+        {
+            string input = query.Text;
+            var filters = ReadSearchFilters(!string.IsNullOrWhiteSpace(input));
+            QueryParser.Parse(input, filters);
+            using var dialog = new Form
+            {
+                Text = "Save search", StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false,
+                ShowInTaskbar = false, ClientSize = new Size(340, 105)
+            };
+            var name = new TextBox { Width = 310, PlaceholderText = "Search name", AccessibleName = "Search name" };
+            var save = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true, Enabled = false };
+            var dismiss = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+            var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10) };
+            layout.Controls.AddRange([name, save, dismiss]);
+            layout.SetFlowBreak(name, true);
+            dialog.Controls.Add(layout);
+            dialog.AcceptButton = save;
+            dialog.CancelButton = dismiss;
+            name.TextChanged += (_, _) => save.Enabled = !string.IsNullOrWhiteSpace(name.Text);
+            Theme.Apply(dialog, currentTheme);
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            string title = name.Text.Trim();
+            if (savedSearches.Load().Any(search => string.Equals(search.Name, title, StringComparison.OrdinalIgnoreCase))
+                && MessageBox.Show(this, $"Replace “{title}”?", "Saved searches",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            savedSearches.Save(title, input, filters);
+        }
+        catch (Exception ex) { state.Text = ex.Message; }
+    }
+
+    void ApplySavedSearch(SavedSearch search)
+    {
+        try
+        {
+            search.Parse();
+            var filters = search.Filters;
+            restoring = true;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(search.Query))
+                {
+                    var choice = scope.Items.Cast<Choice>().FirstOrDefault(item => item.Id == filters.Volume);
+                    scope.SelectedItem = choice ?? scope.Items[0];
+                }
+                status.SelectedIndex = filters.Online is null ? 0 : filters.Online.Value ? 1 : 2;
+                extension.Text = filters.Extension ?? "";
+                min.Text = filters.Min?.ToString() ?? "";
+                max.Text = filters.Max?.ToString() ?? "";
+                RestoreSearchDate(from, filters.From, 0);
+                RestoreSearchDate(through, filters.Through, -1);
+                includeRemoved.Checked = filters.IncludeRemoved;
+                query.Text = search.Query;
+                if (!string.IsNullOrWhiteSpace(search.Query))
+                    ApplySearchDrives(filters.Drives?.ToHashSet(StringComparer.Ordinal));
+            }
+            finally { restoring = false; }
+            SelectBrowserDrive();
+        }
+        catch (Exception ex) { state.Text = ex.Message; }
+    }
+
+    static void RestoreSearchDate(DateTimePicker picker, long? timestamp, int offset)
+    {
+        if (timestamp is long time)
+        {
+            var date = Catalog.Local(time).Date.AddDays(offset);
+            picker.Value = date < picker.MinDate ? picker.MinDate : date > picker.MaxDate ? picker.MaxDate : date;
+        }
+        picker.Checked = timestamp is not null;
     }
 
     string FormatHitVolume(Hit hit) => volumesById.TryGetValue(hit.Volume, out var volume)
