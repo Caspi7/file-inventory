@@ -47,6 +47,10 @@ INSERT INTO files(volume,rel,name,name_key,parent_key,extension,bytes,modified,c
 SELECT $volume,p.rel,p.name,p.name_key,p.parent_key,p.extension,p.bytes,p.modified,p.created,p.attributes,$seen,p.file_key
 FROM new_paths n CROSS JOIN pending.entries p ON p.rel=n.rel;
 INSERT OR IGNORE INTO prefixes(token,file_id)
-SELECT x.token,f.id FROM new_paths n CROSS JOIN files f ON f.volume=$volume AND f.rel=n.rel
-CROSS JOIN pending.prefixes x ON x.rel=n.rel;
+SELECT j.value,f.id
+FROM new_paths n
+CROSS JOIN files f ON f.volume=$volume AND f.rel=n.rel
+CROSS JOIN pending.entries p ON p.rel=n.rel
+CROSS JOIN json_each(p.tokens) j
+ORDER BY j.value COLLATE BINARY,f.id;
 DROP TABLE new_paths;
