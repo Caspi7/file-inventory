@@ -46,13 +46,16 @@ export component Action inherits Rectangle {
             horizontal-alignment: center;
         }
     }
-    pointer := TouchArea { enabled: root.enabled; clicked => { keyboard.focus(); root.clicked(); } }
     keyboard := FocusScope {
         enabled: root.enabled;
         key-pressed(event) => {
             if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
             return reject;
         }
+    }
+    pointer := TouchArea {
+        enabled: root.enabled; mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => { root.clicked(); }
     }
 }
 
@@ -69,36 +72,75 @@ export component Meter inherits Rectangle {
 
 component Cells inherits HorizontalLayout {
     in property <DataRow> cells;
-    in property <bool> compact;
+    in property <DataRow> headers;
+    in property <string> column-mode;
     in property <color> ink: Palette.fg;
-    padding-left: 8px; padding-right: 8px; spacing: 8px;
-    Label { text: cells.a; color: ink; horizontal-stretch: 2; min-width: 80px; }
-    Label { text: cells.b; color: ink; width: compact ? 110px : 61px; }
-    Label { text: cells.c; color: ink; horizontal-stretch: 4; min-width: 100px; }
-    Label { visible: !compact || cells.d != ""; text: cells.d; color: ink; width: compact ? 78px : 82px; }
-    Label { visible: !compact || cells.e != ""; text: cells.e; color: ink; width: compact ? 128px : 78px; }
-    if !compact : Label { text: cells.f; color: ink; width: 75px; }
-    if !compact : Label { text: cells.g; color: ink; width: 134px; }
+    in property <bool> header;
+    in property <int> sort-column;
+    in property <bool> sort-ascending;
+    callback sort(int);
+    property <bool> main: column-mode == "main";
+    property <bool> deep: column-mode == "deep";
+    property <[string]> titles: main ? [headers.a, headers.b, headers.c, headers.d, headers.e, headers.f, headers.g]
+        : deep ? [headers.a, headers.b, headers.c, headers.d, headers.e]
+        : headers.d != "" ? [headers.a, headers.b, headers.c, headers.d] : [headers.a, headers.b, headers.c];
+    property <[string]> values: [cells.a, cells.b, cells.c, cells.d, cells.e, cells.f, cells.g];
+    property <[length]> widths: main ? [200px, 64px, 140px, 145px, 72px, 86px, 132px]
+        : deep ? [210px, 155px, 180px, 86px, 132px, 0px, 0px]
+        : [150px, 110px, 100px, 100px, 128px, 0px, 0px];
+    padding-left: 8px; padding-right: 22px; spacing: 8px;
+    for title[i] in root.titles : Rectangle {
+        clip: true;
+        min-width: root.widths[i];
+        max-width: i == 2 ? 10000px : root.widths[i];
+        preferred-width: i == 2 ? 0px : root.widths[i];
+        horizontal-stretch: i == 2 ? 1 : 0;
+        property <bool> sortable: root.header && (root.main || root.deep);
+        background: sortable && sort-hit.has-hover ? Palette.surface-hover : transparent;
+        Label {
+            width: parent.width; height: parent.height;
+            text: root.header ? title + (root.sort-column == i ? (root.sort-ascending ? " ▲" : " ▼") : "") : root.values[i];
+            color: root.ink;
+            wrap: no-wrap; overflow: elide; vertical-alignment: center;
+            horizontal-alignment: (root.main && i >= 5) || (root.deep && i >= 3) ? right : left;
+        }
+        sort-hit := TouchArea {
+            enabled: parent.sortable;
+            mouse-cursor: pointer;
+            clicked => { root.sort(i); }
+        }
+    }
 }
 
 export component Grid inherits VerticalLayout {
     in property <[DataRow]> rows;
     in property <DataRow> headers;
-    in property <bool> compact;
+    in property <string> column-mode: "main";
+    in property <int> sort-column: -1;
+    in property <bool> sort-ascending: true;
     in-out property <int> selection: -1;
+    callback sort(int);
     callback selected(int);
     callback activated(int);
+    property <length> table-width: max(items.visible-width, column-mode == "main" ? 917px : column-mode == "deep" ? 825px : headers.d != "" ? 514px : 406px);
     Rectangle {
-        height: 29px; background: Palette.header-bg;
-        Cells { cells: root.headers; compact: root.compact; ink: Palette.muted; }
+        height: 29px; background: Palette.header-bg; clip: true;
+        Cells {
+            x: items.content-x; width: root.table-width; height: parent.height;
+            headers: root.headers; column-mode: root.column-mode; ink: Palette.muted;
+            header: true; sort-column: root.sort-column; sort-ascending: root.sort-ascending;
+            sort(i) => { root.sort(i); }
+        }
         Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; }
     }
-    ListView {
+    items := ListView {
+        content-width: root.table-width;
         for row[i] in root.rows : Rectangle {
-            height: 29px;
+            width: root.table-width; height: 29px; clip: true;
             background: i == root.selection ? Palette.accent : hit.has-hover ? Palette.surface-hover : mod(i, 2) == 0 ? Palette.surface : Palette.surface-alt;
-            Cells { cells: row; compact: root.compact; ink: i == root.selection ? white : Palette.fg; }
+            Cells { cells: row; headers: root.headers; column-mode: root.column-mode; ink: i == root.selection ? white : Palette.fg; }
             hit := TouchArea {
+                mouse-cursor: pointer;
                 clicked => { root.selection = i; root.selected(i); }
                 double-clicked => { root.activated(i); }
             }
