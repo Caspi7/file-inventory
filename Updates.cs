@@ -5,6 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.16
+        • Universal 1-Click Cloud Sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud Drive, or custom/Syncthing folders.
+        • Optional Auto-sync after each drive scan and optional AES-256-GCM passphrase encryption for private cloud snapshots.
+
         File Inventory 1.2.15
         • Saved theme preference across restarts (no longer resets to Light mode).
         • Added a 3rd VS Code-inspired Dark Blue theme (cycle Theme: Light → Dark → Dark Blue).
