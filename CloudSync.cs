@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace FileInventory;
 
-sealed record SyncConfig(string Folder = "", bool AutoSyncAfterScan = false, string Passphrase = "");
+sealed record SyncConfig(string Folder = "", bool AutoSyncAfterScan = false, string Passphrase = "",
+    bool SyncContentIndex = false);
 
 sealed record CloudProvider(string Name, string RootPath, string SuggestedFolder);
 
@@ -17,6 +18,7 @@ static class CloudSync
     const string PlainExtension = ".fiinventory";
     const string LegacyPlainExtension = ".finv.gz";
     const string EncryptedExtension = ".finv.enc";
+    const string ContentExtension = ".ficontent";
     const string SyncSubfolderName = "FileInventorySync";
     const int SaltSize = 16;
     const int NonceSize = 12;
@@ -263,7 +265,85 @@ static class CloudSync
         if (stateDirty)
             SaveState(catalog.DataDirectory, state);
 
+        if (config.SyncContentIndex)
+        {
+            var content = SyncContent(new ContentIndex(catalog), config, token);
+            exported += content.Exported;
+            imported += content.Imported;
+            skipped += content.Skipped;
+            errors.AddRange(content.Errors);
+        }
+
         return new SyncSummary(exported, imported, skipped, errors);
+    }
+
+    internal static SyncSummary SyncContent(ContentIndex index, SyncConfig config, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(config.Folder))
+            throw new InvalidOperationException("Choose a cloud sync folder first.");
+
+        Directory.CreateDirectory(config.Folder);
+        string ownName = $"{Environment.MachineName} - ContentIndex{ContentExtension}";
+        int exported = 0, imported = 0, skipped = 0;
+        var errors = new List<string>();
+        try
+        {
+            if (index.GetStats().IndexedFiles == 0) skipped++;
+            else
+            {
+                string target = Path.Combine(config.Folder, ownName);
+                if (string.IsNullOrEmpty(config.Passphrase))
+                    index.ExportContent(target);
+                else
+                {
+                    string temporary = Path.Combine(Path.GetTempPath(), $"finv-content-{Guid.NewGuid():N}.tmp");
+                    try
+                    {
+                        index.ExportContent(temporary);
+                        EncryptFileAtomic(temporary, target, config.Passphrase);
+                    }
+                    finally { File.Delete(temporary); }
+                }
+                exported++;
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Export content: {ex.Message}");
+        }
+
+        foreach (string source in Directory.EnumerateFiles(config.Folder, $"*{ContentExtension}"))
+        {
+            token.ThrowIfCancellationRequested();
+            if (Path.GetFileName(source).Equals(ownName, StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                // Retry on later syncs because matching inventory rows may arrive after the archive.
+                if (ImportSnapshot(source) > 0) imported++;
+                else skipped++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Import {Path.GetFileName(source)}: {ex.Message}");
+            }
+        }
+        return new SyncSummary(exported, imported, skipped, errors);
+
+        int ImportSnapshot(string source)
+        {
+            if (!IsEncryptedSnapshot(source)) return index.ImportContent(source);
+            if (string.IsNullOrEmpty(config.Passphrase))
+                throw new InvalidDataException("Content snapshot is encrypted. Enter the sync passphrase in Cloud Sync settings.");
+
+            string temporary = Path.Combine(Path.GetTempPath(), $"finv-content-{Guid.NewGuid():N}.tmp");
+            try
+            {
+                DecryptFile(source, temporary, config.Passphrase);
+                return index.ImportContent(temporary);
+            }
+            finally { File.Delete(temporary); }
+        }
     }
 
     static string ImportSnapshot(Catalog catalog, string sourcePath, string passphrase)
@@ -536,8 +616,8 @@ sealed partial class InventoryWindow
         {
             Text = "Cloud Sync",
             StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(580, 320),
-            MinimumSize = new Size(520, 300),
+            ClientSize = new Size(580, 350),
+            MinimumSize = new Size(520, 330),
             Font = Font,
             ShowInTaskbar = false,
             FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -572,6 +652,17 @@ sealed partial class InventoryWindow
             AutoSize = true,
             Margin = new Padding(0, 6, 0, 4)
         };
+
+        using var syncTips = new ToolTip();
+        var syncContentCheck = new CheckBox
+        {
+            Text = "Also sync Deep Search content index (larger files)",
+            Checked = config.SyncContentIndex,
+            AutoSize = true,
+            Margin = new Padding(0, 4, 0, 4)
+        };
+        Theme.AttachTooltip(syncContentCheck, syncTips,
+            "Optional (off by default): includes compressed .ficontent text-search indexes when syncing.");
 
         var passphraseBox = new TextBox
         {
@@ -623,7 +714,8 @@ sealed partial class InventoryWindow
         bool syncNowRequested = false;
         SyncConfig? savedConfig = null;
 
-        SyncConfig ReadFormConfig() => new(folderBox.Text.Trim(), autoSyncCheck.Checked, passphraseBox.Text);
+        SyncConfig ReadFormConfig() => new(folderBox.Text.Trim(), autoSyncCheck.Checked, passphraseBox.Text,
+            syncContentCheck.Checked);
 
         var syncNowButton = new Button { Text = "Sync Now", AutoSize = true };
         var saveButton = new Button { Text = "Save", AutoSize = true };
@@ -660,7 +752,7 @@ sealed partial class InventoryWindow
         foreach (Control c in buttons.Controls)
             c.Margin = new Padding(6, 2, 0, 2);
 
-        var layout = Stack(7);
+        var layout = Stack(8);
         layout.Padding = new Padding(14);
         var providerHeader = LabelFor("Quick-select detected cloud drive:");
         providerHeader.Margin = new Padding(0, 0, 0, 2);
@@ -675,9 +767,10 @@ sealed partial class InventoryWindow
         layout.Controls.Add(folderHeader, 0, 2);
         layout.Controls.Add(folderRow, 0, 3);
         layout.Controls.Add(autoSyncCheck, 0, 4);
-        layout.Controls.Add(passphraseHeader, 0, 5);
-        layout.Controls.Add(passphraseBox, 0, 6);
-        for (int i = 0; i < 7; i++)
+        layout.Controls.Add(syncContentCheck, 0, 5);
+        layout.Controls.Add(passphraseHeader, 0, 6);
+        layout.Controls.Add(passphraseBox, 0, 7);
+        for (int i = 0; i < 8; i++)
             layout.RowStyles.Add(new(SizeType.AutoSize));
 
         var outer = Stack(2);
@@ -691,7 +784,11 @@ sealed partial class InventoryWindow
         dialog.Controls.Add(outer);
         dialog.AcceptButton = syncNowButton;
         dialog.CancelButton = closeButton;
-        dialog.Load += (_, _) => Theme.Apply(dialog, currentTheme);
+        dialog.Load += (_, _) =>
+        {
+            Theme.Apply(dialog, currentTheme);
+            Theme.StyleToolTip(syncTips);
+        };
 
         if (dialog.ShowDialog(this) == DialogResult.OK && savedConfig is not null)
         {
