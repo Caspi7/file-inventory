@@ -110,9 +110,10 @@ sealed partial class InventoryWindow
         string? reportTitle = null;
         InventoryExportFormat? reportFormat = null;
         const string archiveFilter = "File Inventory backups (*.fiinventory)|*.fiinventory";
+        const string importFilter = "File Inventory backups (*.fiinventory;*.finv.gz;*.finv.enc)|*.fiinventory;*.finv.gz;*.finv.enc|All files (*.*)|*.*";
         import.Click += (_, _) =>
         {
-            using var picker = new OpenFileDialog { Filter = archiveFilter, Title = "Import a drive inventory" };
+            using var picker = new OpenFileDialog { Filter = importFilter, Title = "Import a drive inventory" };
             if (picker.ShowDialog(window) != DialogResult.OK) return;
             transferPath = picker.FileName;
             window.DialogResult = DialogResult.OK;
