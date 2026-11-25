@@ -71,9 +71,9 @@ sealed partial class InventoryWindow
         location.UseMnemonic = false;
         Theme.MarkPrimaryLabel(location);
         details.Height = 140;
-        var toolbar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 56,
+        var toolbar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46,
             ColumnCount = 2, RowCount = 1, Tag = "command-bar",
-            Padding = new Padding(10, 10, 10, 10), Margin = Padding.Empty };
+            Padding = new Padding(10, 8, 10, 0), Margin = Padding.Empty };
         toolbar.ColumnStyles.Add(new(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new(SizeType.AutoSize));
         toolbar.RowStyles.Add(new(SizeType.AutoSize));
@@ -291,12 +291,25 @@ sealed partial class InventoryWindow
     {
         var group = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
             WrapContents = false, Tag = "command-bar-group",
-            Anchor = alignment == AnchorStyles.Left ? AnchorStyles.Left | AnchorStyles.Right : alignment,
+            Anchor = alignment == AnchorStyles.Left
+                ? AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+                : AnchorStyles.Right | AnchorStyles.Bottom,
             Margin = Padding.Empty };
         foreach (var control in controls)
         {
-            control.Anchor = AnchorStyles.None;
-            control.Margin = new Padding(0, 2, 4, 2);
+            if (control is Button b)
+            {
+                b.Tag = "command-bar-btn";
+                b.MinimumSize = new Size(b.MinimumSize.Width, 36);
+                b.Height = 36;
+                b.Anchor = AnchorStyles.Bottom;
+                b.Margin = new Padding(0, 0, 5, 0);
+            }
+            else
+            {
+                control.Anchor = AnchorStyles.None;
+                control.Margin = new Padding(0, 2, 6, 4);
+            }
         }
         group.Controls.AddRange(controls);
         return group;
