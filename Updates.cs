@@ -5,7 +5,7 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string CurrentReleaseNotes =
-        "File Inventory 1.2.10\n\n" +
+        "File Inventory 1.2.11\n\n" +
         "• Fixed Dark Mode rendering for ListView headers, ComboBox dropdowns, ProgressBar, and disabled buttons.\n" +
         "• Added Accept & Install Now dialog with release notes when an update is found.\n" +
         "• Faster indexing, smaller SQLite catalog, and smaller single-file executable.";
