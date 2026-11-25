@@ -114,7 +114,7 @@ sealed partial class InventoryWindow : Form
         this.benchmark = benchmark;
         savedSearches = new(catalog.DataDirectory);
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.3.4 · Benchmark" : "File Inventory 1.3.4";
+        Text = benchmark ? "File Inventory 1.3.5 · Benchmark" : "File Inventory 1.3.5";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -506,6 +506,8 @@ sealed partial class InventoryWindow : Form
         };
         var scanBtn = new Button { Text = "Scan selected", DialogResult = DialogResult.OK, AutoSize = true };
         var cancelBtn = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        Theme.SetIcon(scanBtn, FluentIcon.Scan);
+        Theme.SetIcon(cancelBtn, FluentIcon.Cancel);
         buttons.Controls.AddRange([cancelBtn, scanBtn]);
 
         dialog.Controls.AddRange([listPanel, header, quick, buttons]);
