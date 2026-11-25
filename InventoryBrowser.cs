@@ -41,6 +41,7 @@ sealed partial class InventoryWindow
     {
         scope.Width = 260;
         InitializeLibrary();
+        InitializeSync();
         InitializeUpdates();
         query.Width = 320;
         refresh.Dock = DockStyle.None;
@@ -53,7 +54,7 @@ sealed partial class InventoryWindow
         details.Height = 140;
         var toolbar = Flow();
         toolbar.Padding = new Padding(10, 8, 10, 6);
-        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton, releaseNotesButton, themeButton]);
+        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, syncButton, syncSettingsButton, searchDrive, updateButton, releaseNotesButton, themeButton]);
         foreach (Control item in toolbar.Controls)
             item.Margin = item is Label ? new Padding(2, 8, 6, 2) : new Padding(0, 2, 6, 2);
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
