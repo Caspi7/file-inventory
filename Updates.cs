@@ -3,6 +3,12 @@ namespace FileInventory;
 sealed partial class InventoryWindow
 {
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
+    readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
+    const string CurrentReleaseNotes =
+        "File Inventory 1.2.7\n\n" +
+        "• Faster indexing and smaller SQLite catalog size (removed redundant files_parent index and duplicate filename_fragments FTS5 table).\n" +
+        "• Smaller single-file compressed Windows executable.\n" +
+        "• Added Elastic License 2.0 (LICENSE) and in-app release notes.";
     bool checkingUpdates;
     AppUpdates.Release? updateRelease;
     long updateBytes;
@@ -12,6 +18,8 @@ sealed partial class InventoryWindow
     void InitializeUpdates()
     {
         updateButton.Enabled = !benchmark;
+        releaseNotesButton.Click += (_, _) =>
+            MessageBox.Show(this, CurrentReleaseNotes, $"File Inventory {AppUpdates.CurrentVersion.ToString(3)} Release Notes");
         updateButton.Click += async (_, _) =>
         {
             if (updateCancellation is not null) updateCancellation.Cancel();
@@ -48,6 +56,11 @@ sealed partial class InventoryWindow
             }
 
             updateRelease = release;
+            if (!closing)
+            {
+                var notes = string.IsNullOrWhiteSpace(release.Notes) ? "No release notes provided." : release.Notes;
+                MessageBox.Show(this, notes, $"Update available: File Inventory {release.Version}");
+            }
             updateButton.Text = "Cancel download";
             UpdateScanDisplay();
             var downloadProgress = new Progress<long>(bytes =>
