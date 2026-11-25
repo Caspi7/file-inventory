@@ -9,8 +9,9 @@ sealed partial class InventoryWindow
         MaximumSize = new Size(1200, 0) };
     readonly Button browse = new() { Text = "Browse selected folder", AutoSize = true };
     readonly Button themeButton = new() { AutoSize = true };
-    readonly Button duplicatesButton = new() { Text = "Duplicates…", AutoSize = true };
-    readonly Button changesButton = new() { Text = "Changes…", AutoSize = true };
+    readonly Button moreButton = new() { Text = "⋯ More", AutoSize = true };
+    readonly Button duplicatesButton = new() { Text = "Duplicates", AutoSize = true };
+    readonly Button changesButton = new() { Text = "Changes", AutoSize = true };
     readonly Button savedSearchButton = new() { Text = "Saved searches ▾", AutoSize = true };
     readonly Button saveSearchButton = new() { Text = "★", AccessibleName = "Save search", AutoSize = true };
     readonly ToolTip tips = new();
@@ -44,29 +45,30 @@ sealed partial class InventoryWindow
 
     void InitializeBrowser()
     {
-        scope.Width = 280;
+        scope.Width = 185;
+        scope.AccessibleName = "Browse drive";
         scope.DropDownWidth = 380;
         InitializeLibrary();
         InitializeSync();
         InitializeUpdates();
         query.Width = 320;
-        refresh.Dock = DockStyle.None;
-        refresh.Width = 175;
-        refresh.Height = 32;
         scanState.Dock = DockStyle.Top;
         scanState.UseMnemonic = false;
         location.UseMnemonic = false;
         Theme.MarkPrimaryLabel(location);
         details.Height = 140;
-        var toolbar = Flow();
-        toolbar.Padding = new Padding(10, 8, 10, 6);
-        toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library,
-            duplicatesButton, changesButton, syncButton, syncSettingsButton, searchDrive, updateButton,
-            releaseNotesButton, themeButton]);
-        foreach (Control item in toolbar.Controls)
-            item.Margin = item is Label ? new Padding(2, 8, 6, 2) : new Padding(0, 2, 6, 2);
+        var toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1,
+            Padding = new Padding(10, 8, 10, 6), Margin = Padding.Empty };
+        toolbar.ColumnStyles.Add(new(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new(SizeType.AutoSize));
+        toolbar.RowStyles.Add(new(SizeType.AutoSize));
+        toolbar.Controls.Add(CommandGroup(AnchorStyles.Left,
+            scope, refresh, cancel, syncButton, library, duplicatesButton, changesButton), 0, 0);
+        toolbar.Controls.Add(CommandGroup(AnchorStyles.Right, themeButton, moreButton), 1, 0);
+        InitializeMoreMenu();
         currentTheme = Theme.LoadPreference(catalog.DataDirectory);
-        themeButton.Text = $"Theme: {ThemeName(currentTheme)}";
+        themeButton.Text = CompactThemeName(currentTheme);
         themeButton.Click += (_, _) => SetTheme(currentTheme switch
         {
             AppTheme.System => AppTheme.Light,
@@ -264,12 +266,62 @@ sealed partial class InventoryWindow
         };
     }
 
+    static FlowLayoutPanel CommandGroup(AnchorStyles alignment, params Control[] controls)
+    {
+        var group = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false, Anchor = alignment, Margin = Padding.Empty };
+        foreach (var control in controls)
+        {
+            control.Anchor = AnchorStyles.None;
+            control.Margin = new Padding(0, 2, 4, 2);
+        }
+        group.Controls.AddRange(controls);
+        return group;
+    }
+
+    void InitializeMoreMenu()
+    {
+        var menu = new ContextMenuStrip();
+        ToolStripMenuItem AddCommand(Button button)
+        {
+            var item = new ToolStripMenuItem(button.Text, null, (_, _) => button.PerformClick());
+            menu.Opening += (_, _) =>
+            {
+                item.Text = button.Text;
+                item.Enabled = button.Enabled;
+            };
+            FormClosed += (_, _) => button.Dispose();
+            return item;
+        }
+
+        menu.Items.AddRange([
+            AddCommand(browse),
+            AddCommand(searchDrive),
+            new ToolStripSeparator(),
+            AddCommand(syncSettingsButton),
+            new ToolStripMenuItem("Command Palette (Ctrl+K)", null, (_, _) => ShowCommandPalette()),
+            new ToolStripSeparator(),
+            AddCommand(updateButton),
+            AddCommand(releaseNotesButton)
+        ]);
+        moreButton.Click += (_, _) => menu.Show(moreButton, new Point(0, moreButton.Height));
+        FormClosed += (_, _) => menu.Dispose();
+    }
+
     static string ThemeName(AppTheme theme) => theme == AppTheme.DarkBlue ? "Dark Blue" : theme.ToString();
+
+    static string CompactThemeName(AppTheme theme) => theme switch
+    {
+        AppTheme.Light => "☀ Light",
+        AppTheme.Dark => "☾ Dark",
+        AppTheme.DarkBlue => "☾ Blue",
+        _ => "◐ System"
+    };
 
     void SetTheme(AppTheme theme)
     {
         currentTheme = theme;
-        themeButton.Text = $"Theme: {ThemeName(theme)}";
+        themeButton.Text = CompactThemeName(theme);
         Theme.SavePreference(catalog.DataDirectory, theme);
         Theme.Apply(this, theme);
         Theme.StyleToolTip(tips);
@@ -311,6 +363,7 @@ sealed partial class InventoryWindow
             (updateButton, "Check for a newer File Inventory release."),
             (releaseNotesButton, "Read the release notes and version history."),
             (themeButton, "Cycle through System, Light, Dark, and Dark Blue themes."),
+            (moreButton, "Open folder, search, sync settings, command palette, and update actions."),
             (query, "Search names across drives (Ctrl+F or Ctrl+L). Use ext:, drive:, min:, max:, after:, before:, online:, or removed: for structured filters."),
             (status, "Filter results by whether the drive is online or offline."),
             (extension, "Filter by file extension, such as .pdf."),
