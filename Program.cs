@@ -38,6 +38,11 @@ static class Program
                 singleInstance.Dispose();
                 AppUpdates.RunInstaller(installer);
             }
+            else
+            {
+                singleInstance.Dispose();
+            }
+            Environment.Exit(0);
         }
         catch (Exception ex)
         {
@@ -105,7 +110,7 @@ sealed partial class InventoryWindow : Form
         this.catalog = catalog;
         this.benchmark = benchmark;
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.16 · Benchmark" : "File Inventory 1.2.16";
+        Text = benchmark ? "File Inventory 1.2.17 · Benchmark" : "File Inventory 1.2.17";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -200,12 +205,6 @@ sealed partial class InventoryWindow : Form
         tray.ContextMenuStrip.Items.Add("Open File Inventory", null, (_, _) => OpenWindow());
         tray.ContextMenuStrip.Items.Add("Exit", null, (_, _) => Close());
         tray.DoubleClick += (_, _) => OpenWindow();
-        Resize += (_, _) =>
-        {
-            if (WindowState != FormWindowState.Minimized) return;
-            tray.Visible = true;
-            Hide();
-        };
         Shown += async (_, _) =>
         {
             from.Checked = through.Checked = false;
@@ -214,7 +213,7 @@ sealed partial class InventoryWindow : Form
             QueueSearch();
         };
         FormClosing += HandleClose;
-        FormClosed += (_, _) => { tray.Dispose(); appIcon.Dispose(); heartbeat.Dispose(); };
+        FormClosed += (_, _) => { tray.Visible = false; tray.Dispose(); appIcon.Dispose(); heartbeat.Dispose(); };
         ShowVolume();
         ShowActions();
     }
@@ -507,6 +506,7 @@ sealed partial class InventoryWindow : Form
         }
         if (readyToClose) return;
         closing = true;
+        tray.Visible = false;
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
         syncCancellation?.Cancel();
@@ -517,7 +517,7 @@ sealed partial class InventoryWindow : Form
         e.Cancel = true;
         foreach (var scan in scans) scan.Cancellation.Cancel();
         ShowVolume();
-        try { await Task.WhenAll(scans.Select(scan => scan.Work)); }
+        try { await Task.WhenAny(Task.WhenAll(scans.Select(scan => scan.Work)), Task.Delay(3000)); }
         catch (Exception) { }
         readyToClose = true;
         Close();
