@@ -22,6 +22,8 @@ sealed class ScanHistoryDialog : Form
     {
         this.catalog = catalog;
         Text = "Scan History";
+        Theme.SetIcon(copy, FluentIcon.Copy);
+        Theme.SetIcon(reveal, FluentIcon.FolderOpen);
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(970, 590);
         MinimumSize = new Size(620, 420);
