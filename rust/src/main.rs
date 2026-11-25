@@ -3,6 +3,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::{Arc,atomic::AtomicBool}, time::Instant};
 use file_inventory::{EngineResult,catalog::{Catalog,Volume},scanner,util};
 
+mod guide;
 mod treemap;
 mod ui_state;
 
