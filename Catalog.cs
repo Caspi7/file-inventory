@@ -8,8 +8,11 @@ namespace FileInventory;
 
 record Volume(string Id, string Mount, string Label, bool Online, bool Enabled, double Hours,
     long? Attempted, long? Succeeded, string Outcome, string Issues,
-    string Host = "", bool Removable = false)
+    string Host = "", bool Removable = false, string Note = "", int FreshnessDays = 0)
 {
+    public bool IsOverdue(long nowMs) => FreshnessDays > 0
+        && (Succeeded is null || nowMs >= Succeeded.Value + FreshnessDays * 86_400_000L);
+
     public string BaseLabel => Label == Mount ? Mount : $"{Label} ({Mount})";
     public string KindLabel => Removable ? "Removable" : "Fixed";
 
@@ -46,6 +49,13 @@ record Volume(string Id, string Mount, string Label, bool Online, bool Enabled, 
 }
 record Entry(string Relative, string Name, string Parent, long Bytes, long Modified, long Created,
     int Attributes, string? FileKey);
+record FolderStats(long SubtreeBytes, long SubtreeFiles, long SubtreeDirs);
+record FileAnnotation(string Tags, string Note, long Updated);
+enum ScanChangeKind { Added = 1, Modified, Removed, Moved }
+record ScanChange(long ScanId, string Volume, string Rel, ScanChangeKind Kind, long? OldBytes, long? NewBytes);
+record ScanSummary(long Id, string Volume, long Started, long? Finished, string Outcome, long Items,
+    string Issues, long IdentityMs, long AddedCount, long ModifiedCount, long RemovedCount, long MovedCount,
+    long BytesDelta);
 record Hit(string Name, string FullPath, string RelativePath, string Volume, string Label, string Status,
     long Bytes, DateTime Modified, DateTime LastSeen, string Matched, bool CanReveal, bool IsDirectory = false);
 record CatalogPage(int Total, List<Hit> Rows);
@@ -68,16 +78,25 @@ sealed partial class Catalog
         database = Path.Combine(dataDirectory, "catalog.sqlite3");
         using var db = Open();
         Execute(db, Resource("Catalog.sql"));
-        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('files') WHERE name='removed';"))
-            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
-                Execute(db, "ALTER TABLE files ADD COLUMN removed INTEGER;");
-        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('volumes') WHERE name='host';"))
-            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
-                Execute(db, "ALTER TABLE volumes ADD COLUMN host TEXT NOT NULL DEFAULT '';");
-        using (var columns = Command(db, "SELECT count(*) FROM pragma_table_info('volumes') WHERE name='removable';"))
-            if (Convert.ToInt32(columns.ExecuteScalar()) == 0)
-                Execute(db, "ALTER TABLE volumes ADD COLUMN removable INTEGER NOT NULL DEFAULT 0;");
+        Execute(db, "BEGIN IMMEDIATE;");
+        AddColumn(db, "files", "removed", "INTEGER");
+        AddColumn(db, "volumes", "host", "TEXT NOT NULL DEFAULT ''");
+        AddColumn(db, "volumes", "removable", "INTEGER NOT NULL DEFAULT 0");
+        AddColumn(db, "volumes", "note", "TEXT NOT NULL DEFAULT ''");
+        AddColumn(db, "volumes", "freshness_days", "INTEGER NOT NULL DEFAULT 0");
+        foreach (string column in new[] { "added_count", "modified_count", "removed_count", "moved_count", "bytes_delta" })
+            AddColumn(db, "scans", column, "INTEGER NOT NULL DEFAULT 0");
+        Execute(db, "COMMIT;");
         BackfillFolders(db);
+        BackfillFolderStats(db);
+    }
+
+    static void AddColumn(SqliteConnection db, string table, string column, string definition)
+    {
+        using var check = Command(db, "SELECT 1 FROM pragma_table_info($table) WHERE name=$column;",
+            ("table", table), ("column", column));
+        if (check.ExecuteScalar() is null)
+            Execute(db, $"ALTER TABLE {table} ADD COLUMN {column} {definition};");
     }
 
     public static string Resource(string name)
@@ -152,7 +171,7 @@ sealed partial class Catalog
     {
         using var db = Open();
         using var command = Command(db, """
-            SELECT id,mount,label,online,enabled,hours,attempted,succeeded,outcome,issues,host,removable
+            SELECT id,mount,label,online,enabled,hours,attempted,succeeded,outcome,issues,host,removable,note,freshness_days
             FROM volumes ORDER BY online DESC,mount,label;
             """);
         using var reader = command.ExecuteReader();
@@ -161,8 +180,100 @@ sealed partial class Catalog
             volumes.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3),
                 reader.GetBoolean(4), reader.GetDouble(5), reader.IsDBNull(6) ? null : reader.GetInt64(6),
                 reader.IsDBNull(7) ? null : reader.GetInt64(7), reader.GetString(8), reader.GetString(9),
-                reader.GetString(10), reader.GetBoolean(11)));
+                reader.GetString(10), reader.GetBoolean(11), reader.GetString(12), reader.GetInt32(13)));
         return volumes;
+    }
+
+    public void UpdateVolumeMetadata(string id, string note, int freshnessDays)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(freshnessDays);
+        using var db = Open();
+        Execute(db, "UPDATE volumes SET note=$note,freshness_days=$days WHERE id=$id;",
+            ("id", id), ("note", note), ("days", freshnessDays));
+    }
+
+    public FolderStats? GetFolderMetadata(string volume, string rel)
+    {
+        using var db = Open();
+        using var command = Command(db, """
+            SELECT subtree_bytes,subtree_files,subtree_dirs FROM folder_stats WHERE volume=$volume AND rel=$rel;
+            """, ("volume", volume), ("rel", rel));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)) : null;
+    }
+
+    public List<ScanSummary> ScanHistory(string volume)
+    {
+        using var db = Open();
+        using var command = Command(db, """
+            SELECT id,volume,started,finished,outcome,items,issues,identity_ms,
+                   added_count,modified_count,removed_count,moved_count,bytes_delta
+            FROM scans WHERE volume=$volume ORDER BY id DESC LIMIT 20;
+            """, ("volume", volume));
+        using var reader = command.ExecuteReader();
+        var scans = new List<ScanSummary>();
+        while (reader.Read())
+            scans.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetInt64(2), NullableLong(reader, 3),
+                reader.GetString(4), reader.GetInt64(5), reader.GetString(6), reader.GetInt64(7),
+                reader.GetInt64(8), reader.GetInt64(9), reader.GetInt64(10), reader.GetInt64(11), reader.GetInt64(12)));
+        return scans;
+    }
+
+    public List<ScanChange> ScanChanges(long scanId)
+    {
+        using var db = Open();
+        using var command = Command(db, """
+            SELECT scan_id,volume,rel,kind,old_bytes,new_bytes FROM scan_changes WHERE scan_id=$scan ORDER BY kind,rel;
+            """, ("scan", scanId));
+        using var reader = command.ExecuteReader();
+        var changes = new List<ScanChange>();
+        while (reader.Read())
+            changes.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                (ScanChangeKind)reader.GetInt32(3), NullableLong(reader, 4), NullableLong(reader, 5)));
+        return changes;
+    }
+
+    public static void PruneScanHistory(SqliteConnection db, string volume)
+    {
+        Execute(db, """
+            DELETE FROM scan_changes WHERE volume=$volume AND scan_id IN (
+                SELECT id FROM scans WHERE volume=$volume AND finished IS NOT NULL ORDER BY id DESC LIMIT -1 OFFSET 20);
+            DELETE FROM scan_coverage WHERE scan_id IN (
+                SELECT id FROM scans WHERE volume=$volume AND finished IS NOT NULL ORDER BY id DESC LIMIT -1 OFFSET 20);
+            DELETE FROM moves WHERE scan_id IN (
+                SELECT id FROM scans WHERE volume=$volume AND finished IS NOT NULL ORDER BY id DESC LIMIT -1 OFFSET 20);
+            DELETE FROM scans WHERE id IN (
+                SELECT id FROM scans WHERE volume=$volume AND finished IS NOT NULL ORDER BY id DESC LIMIT -1 OFFSET 20);
+            """, ("volume", volume));
+    }
+
+    static long? NullableLong(SqliteDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
+
+    public FileAnnotation? GetAnnotation(string volume, string rel)
+    {
+        using var db = Open();
+        using var command = Command(db, """
+            SELECT tags,note,updated FROM file_annotations WHERE volume=$volume AND rel=$rel;
+            """, ("volume", volume), ("rel", rel));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new(reader.GetString(0), reader.GetString(1), reader.GetInt64(2)) : null;
+    }
+
+    public void SetAnnotation(string volume, string rel, string tags, string note)
+    {
+        var indexedTags = tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(Key).Distinct(StringComparer.Ordinal);
+        using var db = Open();
+        Execute(db, "BEGIN IMMEDIATE;");
+        Execute(db, """
+            INSERT INTO file_annotations(volume,rel,tags,note,updated) VALUES($volume,$rel,$tags,$note,$updated)
+            ON CONFLICT(volume,rel) DO UPDATE SET tags=excluded.tags,note=excluded.note,updated=excluded.updated;
+            DELETE FROM file_tags WHERE volume=$volume AND rel=$rel;
+            INSERT INTO file_tags(tag,volume,rel) SELECT value,$volume,$rel FROM json_each($indexedTags);
+            COMMIT;
+            """, ("volume", volume), ("rel", rel), ("tags", tags), ("note", note), ("updated", Now()),
+            ("indexedTags", JsonSerializer.Serialize(indexedTags)));
     }
 
     public void Configure(string id, bool enabled, double hours)
@@ -367,9 +478,52 @@ sealed partial class Catalog
                         SELECT $token,id FROM files WHERE volume=$v AND rel=$r;
                         """, ("token", token), ("v", key.Volume), ("r", key.Relative));
             }
-            Execute(db, "INSERT INTO catalog_meta VALUES('folders-v1','done'); COMMIT;");
+            Execute(db, "INSERT OR IGNORE INTO catalog_meta VALUES('folders-v1','done'); COMMIT;");
         }
         catch { Execute(db, "ROLLBACK;"); throw; }
+    }
+
+    static void BackfillFolderStats(SqliteConnection db)
+    {
+        using var check = Command(db, "SELECT 1 FROM catalog_meta WHERE key='folder-stats-v1';");
+        if (check.ExecuteScalar() is not null) return;
+        Execute(db, "BEGIN IMMEDIATE;");
+        if (check.ExecuteScalar() is null)
+        {
+            var volumes = new List<string>();
+            using (var command = Command(db, "SELECT id FROM volumes;"))
+            using (var reader = command.ExecuteReader())
+                while (reader.Read()) volumes.Add(reader.GetString(0));
+            foreach (string volume in volumes) RebuildFolderStats(db, volume);
+            Execute(db, "INSERT INTO catalog_meta VALUES('folder-stats-v1','done');");
+        }
+        Execute(db, "COMMIT;");
+    }
+
+    // The caller holds the write transaction for the snapshot being summarized.
+    public static void RebuildFolderStats(SqliteConnection db, string volume)
+    {
+        db.CreateFunction<string, string>("folder_parent", rel => rel[..Math.Max(0, rel.LastIndexOf('\\'))],
+            isDeterministic: true);
+        Execute(db, """
+            DELETE FROM folder_stats WHERE volume=$volume;
+            WITH RECURSIVE direct(rel,bytes,files,dirs) AS (
+                SELECT folder_parent(rel),sum(CASE WHEN (attributes & 16)=0 THEN bytes ELSE 0 END),
+                       sum((attributes & 16)=0),sum((attributes & 16)<>0)
+                FROM files WHERE volume=$volume AND removed IS NULL GROUP BY folder_parent(rel)
+            ), ancestors(rel,bytes,files,dirs) AS (
+                SELECT rel,bytes,files,dirs FROM direct
+                UNION ALL
+                SELECT folder_parent(rel),bytes,files,dirs FROM ancestors WHERE rel<>''
+            ), totals(rel,bytes,files,dirs) AS (
+                SELECT * FROM ancestors
+                UNION ALL SELECT rel,0,0,0 FROM files
+                    WHERE volume=$volume AND removed IS NULL AND (attributes & 16)<>0
+                UNION ALL SELECT '',0,0,0
+            )
+            INSERT INTO folder_stats(volume,rel,subtree_bytes,subtree_files,subtree_dirs)
+            SELECT $volume,rel,sum(bytes),sum(files),sum(dirs) FROM totals GROUP BY rel;
+            """, ("volume", volume));
     }
 
     public List<string> CopyCandidates(Hit hit)
