@@ -83,24 +83,20 @@ sealed partial class InventoryWindow
         }
         var selectAll = new Button { Text = "Select all", AutoSize = true };
         var clearAll = new Button { Text = "Clear all", AutoSize = true };
-        var import = new Button { Text = "Import inventory…", AutoSize = true, Enabled = !benchmark };
-        var export = new Button { Text = "Export selected drive…", AutoSize = true, Enabled = false };
-        var report = new Button { Text = "Export report…", AutoSize = true, Enabled = false };
+        var import = UiHelpers.IconButton("Import inventory…", FluentIcon.Import, enabled: !benchmark);
+        var export = UiHelpers.IconButton("Export selected drive…", FluentIcon.Export, enabled: false);
+        var report = UiHelpers.IconButton("Export report…", FluentIcon.Export, enabled: false);
         var note = new TextBox { PlaceholderText = "e.g. Shelf B — Cold Backup", Width = 230,
             AccessibleName = "Location note" };
         var reminder = new NumericUpDown { Minimum = 0, Maximum = int.MaxValue, Width = 90,
             AccessibleName = "Remind after (days), zero turns reminders off" };
-        var saveNote = new Button { Text = "Save drive note", AutoSize = true };
-        Theme.SetIcon(import, FluentIcon.Import);
-        Theme.SetIcon(export, FluentIcon.Export);
-        Theme.SetIcon(report, FluentIcon.Export);
-        Theme.SetIcon(saveNote, FluentIcon.Save);
+        var saveNote = UiHelpers.IconButton("Save drive note", FluentIcon.Save);
         var editor = Flow();
         editor.Controls.AddRange([LabelFor("Location note"), note, LabelFor("Remind after (days)"), reminder, saveNote]);
         var apply = new Button { Text = "Apply", AutoSize = true, DialogResult = DialogResult.OK };
         var dismiss = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
-        selectAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, true); };
-        clearAll.Click += (_, _) => { for (int i = 0; i < list.Items.Count; i++) list.SetItemChecked(i, false); };
+        selectAll.Click += (_, _) => UiHelpers.SetAllChecked(list, true);
+        clearAll.Click += (_, _) => UiHelpers.SetAllChecked(list, false);
         void ShowDriveNote()
         {
             int index = list.SelectedIndex;
