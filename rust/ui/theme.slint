@@ -22,5 +22,17 @@ export global Palette {
     out property <color> accent-hover: mode == ThemeMode.DarkBlue ? #1c97ea : dark ? #1a8ae2 : #1676c9;
     out property <color> accent-pressed: mode == ThemeMode.DarkBlue ? #0062a8 : dark ? #0066b8 : #00549e;
     out property <color> track-bg: mode == ThemeMode.DarkBlue ? #26344e : dark ? #38383e : #e0e2e8;
+    out property <color> folder: mode == ThemeMode.DarkBlue ? #facc15 : dark ? #f5c542 : #eab308;
+    out property <color> folder-stroke: mode == ThemeMode.DarkBlue ? #ca8a04 : dark ? #c48b10 : #b45309;
+    out property <color> drive: mode == ThemeMode.DarkBlue ? #38bdf8 : dark ? #38bdf8 : #0284c7;
+    out property <color> success: mode == ThemeMode.DarkBlue ? #34d399 : dark ? #4ade80 : #15803d;
+    out property <color> success-bg: mode == ThemeMode.DarkBlue ? #10322b : dark ? #163322 : #dcfce7;
+    out property <color> warning: mode == ThemeMode.DarkBlue ? #fbbf24 : dark ? #fbbf24 : #b45309;
+    out property <color> warning-bg: mode == ThemeMode.DarkBlue ? #332917 : dark ? #362914 : #fef3c7;
+    out property <color> danger: mode == ThemeMode.DarkBlue ? #fb7185 : dark ? #f87171 : #dc2626;
+    out property <color> danger-bg: mode == ThemeMode.DarkBlue ? #381a26 : dark ? #3b191d : #fee2e2;
+    out property <color> imported: mode == ThemeMode.DarkBlue ? #a78bfa : dark ? #a78bfa : #7c3aed;
+    out property <color> imported-bg: mode == ThemeMode.DarkBlue ? #231f42 : dark ? #271f3d : #ede9fe;
+    out property <color> teal: mode == ThemeMode.DarkBlue ? #2dd4bf : dark ? #2dd4bf : #0d9488;
     changed dark => { WidgetPalette.color-scheme = self.dark ? ColorScheme.dark : ColorScheme.light; }
 }
