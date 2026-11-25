@@ -17,6 +17,33 @@ pub struct Volume {
     pub note: String, pub freshness_days: i32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum FileSortColumn { Name, Extension, Path, Volume, Status, Size, Modified }
+
+#[derive(Clone, Copy, Debug)]
+pub struct FileSort {
+    pub column: FileSortColumn,
+    pub ascending: bool,
+}
+
+impl FileSort {
+    fn order_by(self) -> String {
+        let value = match self.column {
+            FileSortColumn::Name => "name_key",
+            FileSortColumn::Extension => "extension",
+            FileSortColumn::Path => "rtrim(replace(mount, '/', char(92)), char(92)) || char(92) || rel COLLATE NOCASE",
+            FileSortColumn::Volume => "coalesce(nullif(label, ''), mount) COLLATE NOCASE",
+            FileSortColumn::Status => "CASE WHEN removed IS NOT NULL THEN 'Removed'
+                WHEN online=0 AND stale<>0 THEN 'Offline · stale'
+                WHEN online=0 THEN 'Offline' WHEN stale<>0 THEN 'Stale' ELSE 'Online' END",
+            FileSortColumn::Size => "bytes",
+            FileSortColumn::Modified => "modified",
+        };
+        let direction = if self.ascending { "ASC" } else { "DESC" };
+        format!("{value} {direction}, name_key, volume, rel")
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FileEntry {
     pub id: i64, pub volume: String, pub rel: String, pub name: String, pub mount: String,
@@ -163,9 +190,14 @@ impl Catalog {
     }
 
     pub fn browse_folder_page(&self, volume_id: &str, parent_rel: &str, show_removed: bool, offset: usize, limit: usize) -> Result<Vec<FileEntry>> {
+        self.browse_folder_page_sorted(volume_id, parent_rel, show_removed, offset, limit, None)
+    }
+
+    pub fn browse_folder_page_sorted(&self, volume_id: &str, parent_rel: &str, show_removed: bool, offset: usize, limit: usize, sort: Option<FileSort>) -> Result<Vec<FileEntry>> {
+        let order = sort.map_or_else(|| "(f.attributes & 16) DESC,f.name_key,f.rel".into(), FileSort::order_by);
         rows(&self.open()?, &format!("SELECT {ENTRY_COLUMNS} FROM files f JOIN volumes v ON v.id=f.volume
           WHERE f.volume=?1 AND f.parent_key=?2 AND (?3 OR f.removed IS NULL)
-          ORDER BY (f.attributes & 16) DESC,f.name_key,f.rel LIMIT ?4 OFFSET ?5"), params![volume_id,catalog_key(parent_rel),show_removed,sql_limit(limit),sql_limit(offset)], file_entry)
+          ORDER BY {order} LIMIT ?4 OFFSET ?5"), params![volume_id,catalog_key(parent_rel),show_removed,sql_limit(limit),sql_limit(offset)], file_entry)
     }
 
     pub fn child_folders(&self, volume_id: &str, parent_rel: &str) -> Result<Vec<FolderNode>> {
@@ -182,6 +214,11 @@ impl Catalog {
     }
 
     pub fn search_page(&self, filter: &SearchFilter, offset: usize, limit: usize) -> Result<Vec<FileEntry>> {
+        self.search_page_sorted(filter, offset, limit, None)
+    }
+
+    pub fn search_page_sorted(&self, filter: &SearchFilter, offset: usize, limit: usize, sort: Option<FileSort>) -> Result<Vec<FileEntry>> {
+        let order = sort.map(FileSort::order_by);
         let parsed = ParsedSearch::parse(filter).map_err(sql_error)?;
         let db = self.open()?;
         let mut filter = parsed.filter;
@@ -213,21 +250,25 @@ impl Catalog {
             AND ($tag IS NULL OR EXISTS(SELECT 1 FROM file_tags t WHERE t.tag=$tag AND t.volume=f.volume AND t.rel=f.rel))
             AND NOT excluded_name(f.name_key)";
         let ranked = if parsed.terms.is_empty() {
+            let inner_order = order.as_deref().unwrap_or("(f.attributes & 16) DESC,f.name_key,f.volume,f.rel");
             format!("SELECT f.id FROM files f JOIN volumes v ON v.id=f.volume
                WHERE ($volume IS NULL OR f.volume=$volume) {extra}
                AND ($extension IS NULL OR f.extension=$extension) AND ($min IS NULL OR f.bytes >= $min)
                AND ($max IS NULL OR f.bytes <= $max) AND ($modifiedFrom IS NULL OR f.modified >= $modifiedFrom)
                AND ($modifiedThrough IS NULL OR f.modified < $modifiedThrough)
                AND ($online IS NULL OR v.online=$online) AND $match IS NULL AND $firstShort IS NULL AND $query=''
-               ORDER BY (f.attributes & 16) DESC,f.name_key,f.volume,f.rel LIMIT $limit OFFSET $offset")
+               ORDER BY {inner_order} LIMIT $limit OFFSET $offset")
         } else {
+            let inner_order = order.as_deref().unwrap_or("rank,length(name),name_key,volume,rel");
             SEARCH.replace("WHERE ($volume IS NULL OR f.volume=$volume)",
                 &format!("WHERE ($volume IS NULL OR f.volume=$volume) {extra}"))
                 .replace("SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,rank,0,removed", "SELECT id")
-                .replace("LIMIT 50;", "LIMIT $limit OFFSET $offset")
+                .replace("ORDER BY rank,length(name),name_key,volume,rel LIMIT 50;",
+                    &format!("ORDER BY {inner_order} LIMIT $limit OFFSET $offset"))
         };
+        let outer_order = order.map_or_else(String::new, |order| format!(" ORDER BY {order}"));
         let sql = format!("WITH selected AS MATERIALIZED ({ranked}) SELECT {ENTRY_COLUMNS}
-           FROM selected CROSS JOIN files f ON f.id=selected.id JOIN volumes v ON v.id=f.volume");
+           FROM selected CROSS JOIN files f ON f.id=selected.id JOIN volumes v ON v.id=f.volume{outer_order}");
         let drives = filter.drives.as_ref().map(|drives| serde_json::to_string(drives).unwrap());
         rows(&db,&sql,named_params!{
             "$match":fts, "$firstShort":short.first(), "$query":parsed.terms.join(" "),
