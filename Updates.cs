@@ -7,6 +7,11 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.4.7
+        ? Cleaned up duplicate code and shared common dialog controls and layout helpers.
+        ? Deep Search merges FTS5 segments and runs incremental vacuum after scans and imports that write content, helping keep indexes smaller and searches faster.
+        ? Verified the Release build and retained the single-file publishing settings.
+
         File Inventory 1.4.6
         • Deep Search adds a Match selector for Smart, All keywords, Any keyword, and Exact phrase searches.
         • Search tools insert Boolean operators, exclusions, quoted phrases, and groups to combine keywords.
