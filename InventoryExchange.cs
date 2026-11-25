@@ -11,7 +11,7 @@ sealed partial class Catalog
     const string ArchiveFormat = "FileInventory";
     static readonly UTF8Encoding ArchiveEncoding = new(false, true);
     sealed record ArchiveHeader(string Format, int Version, string Id, string Label, string Mount,
-        string? Host = null, bool Removable = false);
+        string? Host = null, bool Removable = false, string? Note = null);
 
     public void ExportInventory(string drive, string destination)
     {
@@ -20,7 +20,7 @@ sealed partial class Catalog
         Execute(db, "BEGIN;");
         ArchiveHeader header;
         using (var command = Command(db, """
-            SELECT label,mount,host,removable,(SELECT value FROM catalog_meta WHERE key='archive-origin')
+            SELECT label,mount,host,removable,(SELECT value FROM catalog_meta WHERE key='archive-origin'),note
             FROM volumes WHERE id=$drive AND (succeeded IS NOT NULL OR id LIKE 'import:%');
             """, ("drive", drive)))
         using (var reader = command.ExecuteReader())
@@ -31,7 +31,7 @@ sealed partial class Catalog
             bool removable = reader.GetBoolean(3);
             string id = drive.StartsWith(ImportedPrefix, StringComparison.Ordinal) ? drive[ImportedPrefix.Length..]
                 : Convert.ToHexString(SHA256.HashData(ArchiveEncoding.GetBytes(reader.GetString(4) + drive)));
-            header = new(ArchiveFormat, 1, id, reader.GetString(0), reader.GetString(1), host, removable);
+            header = new(ArchiveFormat, 1, id, reader.GetString(0), reader.GetString(1), host, removable, reader.GetString(5));
         }
 
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -86,11 +86,13 @@ sealed partial class Catalog
         using var db = Open();
         Execute(db, "BEGIN IMMEDIATE;");
         Execute(db, """
-            INSERT INTO volumes(id,mount,label,online,outcome,host,removable) VALUES($id,$mount,$label,0,'Imported',$host,$removable)
-            ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=0,host=excluded.host,removable=excluded.removable;
+            INSERT INTO volumes(id,mount,label,online,outcome,host,removable,note)
+            VALUES($id,$mount,$label,0,'Imported',$host,$removable,coalesce($note,''))
+            ON CONFLICT(id) DO UPDATE SET mount=excluded.mount,label=excluded.label,online=0,
+                host=excluded.host,removable=excluded.removable,note=coalesce($note,volumes.note);
             DELETE FROM files WHERE volume=$id;
             """, ("id", id), ("mount", header.Mount), ("label", header.Label),
-            ("host", host), ("removable", header.Removable ? 1 : 0));
+            ("host", host), ("removable", header.Removable ? 1 : 0), ("note", header.Note));
         using var insert = Command(db, """
             INSERT INTO files(volume,rel,name,name_key,parent_key,extension,bytes,created,modified,attributes,seen,stale,removed)
             VALUES($v,$r,$n,$k,$p,$x,$b,$c,$m,$a,$s,$t,$d);
@@ -110,6 +112,7 @@ sealed partial class Catalog
             {
                 if (row.GetInt64() != count || ReadArchiveLine(reader) is not null)
                     throw new InvalidDataException("The inventory entry count does not match.");
+                RebuildFolderStats(db, id);
                 Execute(db, "COMMIT;");
                 return id;
             }
