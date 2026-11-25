@@ -34,14 +34,14 @@ sealed class DeepSearchDialog : Form
     readonly ListView results = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true,
         HideSelection = false, MultiSelect = false, ShowItemToolTips = true, AccessibleName = "Content search results" };
     readonly ProgressBar progress = new() { Width = 185, Height = 18, AccessibleName = "Content scan progress" };
-    readonly Button search = ActionButton("Search", FluentIcon.Search);
-    readonly Button copy = ActionButton("Copy Path", FluentIcon.Copy);
-    readonly Button reveal = ActionButton("Reveal in Explorer", FluentIcon.FolderOpen);
-    readonly Button scan = ActionButton("Scan content", FluentIcon.Scan);
-    readonly Button cancel = ActionButton("Cancel", FluentIcon.Cancel);
-    readonly Button sync = ActionButton("Sync content", FluentIcon.Sync);
-    readonly Button export = ActionButton("Export content…", FluentIcon.Export);
-    readonly Button import = ActionButton("Import content…", FluentIcon.Import);
+    readonly Button search = UiHelpers.IconButton("Search", FluentIcon.Search);
+    readonly Button copy = UiHelpers.IconButton("Copy Path", FluentIcon.Copy);
+    readonly Button reveal = UiHelpers.IconButton("Reveal in Explorer", FluentIcon.FolderOpen);
+    readonly Button scan = UiHelpers.IconButton("Scan content", FluentIcon.Scan);
+    readonly Button cancel = UiHelpers.IconButton("Cancel", FluentIcon.Cancel);
+    readonly Button sync = UiHelpers.IconButton("Sync content", FluentIcon.Sync);
+    readonly Button export = UiHelpers.IconButton("Export content…", FluentIcon.Export);
+    readonly Button import = UiHelpers.IconButton("Import content…", FluentIcon.Import);
     CancellationTokenSource? scanCancellation;
     bool busy, closeRequested, estimating;
     int estimateRevision;
@@ -271,13 +271,6 @@ sealed class DeepSearchDialog : Form
         Text = label, AutoSize = true, Checked = true, UseMnemonic = false, Padding = new Padding(0, 0, 8, 0)
     };
     static Label Line(string label) => new() { Text = label, AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left };
-
-    static Button ActionButton(string label, FluentIcon icon)
-    {
-        var button = new Button { Text = label, AutoSize = true };
-        Theme.SetIcon(button, icon);
-        return button;
-    }
 
     static TableLayoutPanel Stack() => new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1 };
 
