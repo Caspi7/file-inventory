@@ -50,6 +50,7 @@ record Volume(string Id, string Mount, string Label, bool Online, bool Enabled, 
 record Entry(string Relative, string Name, string Parent, long Bytes, long Modified, long Created,
     int Attributes, string? FileKey);
 record FolderStats(long SubtreeBytes, long SubtreeFiles, long SubtreeDirs);
+record StorageMapNode(string Rel, string Name, string Extension, long Bytes, long FileCount, bool IsDirectory);
 record FileAnnotation(string Tags, string Note, long Updated);
 enum ScanChangeKind { Added = 1, Modified, Removed, Moved }
 record ScanChange(long ScanId, string Volume, string Rel, ScanChangeKind Kind, long? OldBytes, long? NewBytes);
@@ -200,6 +201,29 @@ sealed partial class Catalog
             """, ("volume", volume), ("rel", rel));
         using var reader = command.ExecuteReader();
         return reader.Read() ? new(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)) : null;
+    }
+
+    public List<StorageMapNode> GetStorageMapChildren(string volumeId, string parentRel, int maxItems = 250)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxItems);
+        using var db = Open();
+        using var command = Command(db, """
+            SELECT f.rel, f.name, f.extension,
+                   CASE WHEN (f.attributes & 16) <> 0 THEN COALESCE(fs.subtree_bytes, 0) ELSE f.bytes END AS size,
+                   CASE WHEN (f.attributes & 16) <> 0 THEN COALESCE(fs.subtree_files, 0) ELSE 1 END,
+                   (f.attributes & 16) <> 0
+            FROM files f
+            LEFT JOIN folder_stats fs ON fs.volume=f.volume AND fs.rel=f.rel
+            WHERE f.volume=$v AND f.parent_key=$pk AND f.removed IS NULL
+            ORDER BY size DESC, f.name_key, f.rel
+            LIMIT $maxItems;
+            """, ("v", volumeId), ("pk", Key(parentRel)), ("maxItems", maxItems));
+        using var reader = command.ExecuteReader();
+        var nodes = new List<StorageMapNode>();
+        while (reader.Read())
+            nodes.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.GetInt64(3), reader.GetInt64(4), reader.GetBoolean(5)));
+        return nodes;
     }
 
     public List<ScanSummary> ScanHistory(string volume)
