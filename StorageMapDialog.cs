@@ -6,7 +6,6 @@ namespace FileInventory;
 sealed class StorageMapDialog : Form
 {
     const int ItemLimit = 250;
-    static readonly string[] SizeUnits = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
     static readonly (string Name, Color Color)[] Categories =
     [
         ("Folders", Color.FromArgb(82, 104, 164)),
@@ -185,13 +184,13 @@ sealed class StorageMapDialog : Form
             bool hasMore = nodes.Count > ItemLimit;
             if (hasMore) nodes.RemoveAt(ItemLimit);
             totalBytes = stats?.SubtreeBytes ?? nodes.Sum(node => node.Bytes);
-            total.Text = $"Total: {FormatSize(totalBytes)}";
+            total.Text = $"Total: {UiHelpers.FormatBytes(totalBytes)}";
             breakdown.BeginUpdate();
             try
             {
                 foreach (var node in nodes)
                 {
-                    var row = new ListViewItem([node.Name, FormatSize(node.Bytes), Share(node), node.FileCount.ToString("N0")]) { Tag = node };
+                    var row = new ListViewItem([node.Name, UiHelpers.FormatBytes(node.Bytes), Share(node), node.FileCount.ToString("N0")]) { Tag = node };
                     rows.Add(node, row);
                     breakdown.Items.Add(row);
                 }
@@ -269,7 +268,7 @@ sealed class StorageMapDialog : Form
     {
         var node = hover ?? selection;
         status.Text = node is not null && SelectedVolume is { } volume
-            ? $"{node.Name}  |  {Path.Combine(volume.Mount, node.Rel)}  |  {FormatSize(node.Bytes)} ({Share(node)})  |  {node.FileCount:N0} files"
+            ? $"{node.Name}  |  {Path.Combine(volume.Mount, node.Rel)}  |  {UiHelpers.FormatBytes(node.Bytes)} ({Share(node)})  |  {node.FileCount:N0} files"
             : folderStatus;
         Theme.AttachTooltip(status, tips, status.Text);
     }
@@ -283,8 +282,7 @@ sealed class StorageMapDialog : Form
     void CopyPath()
     {
         if (SelectedVolume is not { } volume || selection is not { } node) return;
-        try { Clipboard.SetText(Path.Combine(volume.Mount, node.Rel)); }
-        catch (System.Runtime.InteropServices.ExternalException ex) { ShowError(ex.Message); }
+        UiHelpers.CopyText(Path.Combine(volume.Mount, node.Rel), this);
     }
 
     async Task OpenOnDrive(bool reveal)
@@ -300,9 +298,12 @@ sealed class StorageMapDialog : Form
                 ShowError("The selected path is unavailable.");
                 return;
             }
-            using var process = Process.Start(reveal
-                ? new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true }
-                : new ProcessStartInfo(path) { UseShellExecute = true });
+            if (reveal)
+            {
+                UiHelpers.RevealInExplorer(path, this);
+                return;
+            }
+            using var process = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex) { if (!IsDisposed) ShowError(ex.Message); }
     }
@@ -317,18 +318,6 @@ sealed class StorageMapDialog : Form
             actions.Dispose();
         }
         base.Dispose(disposing);
-    }
-
-    static string FormatSize(long bytes)
-    {
-        double size = bytes;
-        int unit = 0;
-        while (size >= 1024 && unit < SizeUnits.Length - 1)
-        {
-            size /= 1024;
-            unit++;
-        }
-        return unit == 0 ? $"{bytes:N0} B" : $"{size:N1} {SizeUnits[unit]}";
     }
 
     static Color TileColor(StorageMapNode node)
@@ -458,7 +447,7 @@ sealed class StorageMapDialog : Form
                 TextRenderer.DrawText(e.Graphics, tile.Node.Name, Font, textBounds, Color.White, flags);
                 textBounds.Y += Font.Height;
                 textBounds.Height -= Font.Height;
-                TextRenderer.DrawText(e.Graphics, FormatSize(tile.Node.Bytes), Font, textBounds, Color.White, flags);
+                TextRenderer.DrawText(e.Graphics, UiHelpers.FormatBytes(tile.Node.Bytes), Font, textBounds, Color.White, flags);
             }
 
             foreach (var tile in tiles)
