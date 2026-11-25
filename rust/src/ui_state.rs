@@ -1,6 +1,6 @@
 use crate::{treemap, AppWindow, DataRow, DriveChoice, Palette, ThemeMode, Tile, TreeRow};
 use file_inventory::{
-    catalog::{Catalog, FileEntry, FolderNode, SavedSearch, ScanRecord, SearchFilter, Volume},
+    catalog::{Catalog, FileEntry, FileSort, FileSortColumn, FolderNode, SavedSearch, ScanRecord, SearchFilter, Volume},
     content::{ContentIndex, ContentMatchMode, ContentScanMode, ContentScanOptions, ContentSearchHit, ContentSearchOptions},
     duplicates::{self, DuplicateGroup, DuplicateOptions},
     export::{self, InventoryExportFormat},
@@ -13,7 +13,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc},
+    sync::{atomic::{AtomicBool, AtomicU64, Ordering}, mpsc, Arc},
     thread,
     time::{Duration, Instant},
 };
@@ -73,15 +73,17 @@ struct State {
     files: Vec<FileEntry>,
     saved: Vec<SavedSearch>,
     job: Option<Job>,
-    query_generation: u64,
+    query_generation: Arc<AtomicU64>,
     page_offset: usize,
-    deep_generation: u64,
+    deep_generation: Arc<AtomicU64>,
     estimate_generation: u64,
     overlay_generation: u64,
     map_generation: u64,
     drive_refreshing: bool,
     browser_loaded: bool,
     choices: Vec<Volume>,
+    choice_indices: Vec<Option<usize>>,
+    local_host: String,
     checked: HashSet<String>,
     commands: Vec<&'static str>,
     groups: Vec<DuplicateGroup>,
@@ -109,9 +111,11 @@ pub fn bind(app: &AppWindow, catalog: Catalog) {
         catalog, tx, rx,
         search_timer: Timer::default(), refresh_timer: Timer::default(),
         volumes: Vec::new(), current: None, tree: Vec::new(), expanded: HashSet::new(), children: HashMap::new(),
-        files: Vec::new(), job: None, query_generation: 0, page_offset: 0, deep_generation: 0, estimate_generation: 0,
+        files: Vec::new(), job: None, query_generation: Arc::default(), page_offset: 0, deep_generation: Arc::default(), estimate_generation: 0,
         overlay_generation: 0, map_generation: 0, drive_refreshing: false, browser_loaded: false,
-        choices: Vec::new(), checked: HashSet::new(), commands: Vec::new(), groups: Vec::new(),
+        choices: Vec::new(), choice_indices: Vec::new(),
+        local_host: std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default(),
+        checked: HashSet::new(), commands: Vec::new(), groups: Vec::new(),
         dialog_files: Vec::new(), history: Vec::new(), hits: Vec::new(), deep_volumes: Vec::new(), map_volumes: Vec::new(),
         map_path: String::new(), tiles: Vec::new(), providers: Vec::new(), pending_import: None,
         removing: None, release_url: String::new(),
@@ -173,13 +177,20 @@ impl State {
                 self.apply_theme(app);
             }
             "search" => {
-                self.query_generation += 1;
+                self.query_generation.fetch_add(1, Ordering::Relaxed);
                 let weak = app.as_weak();
                 self.search_timer.start(TimerMode::SingleShot, Duration::from_millis(180), move || {
                     if let Some(app) = weak.upgrade() { app.invoke_action("search-now".into(), 0); }
                 });
             }
             "search-now" => { self.search_timer.stop(); self.query(app)?; }
+            "file-sort" => {
+                let ascending = app.get_file_sort_column() != i as i32 || !app.get_file_sort_ascending();
+                app.set_file_sort_column(i as i32);
+                app.set_file_sort_ascending(ascending);
+                self.search_timer.stop();
+                self.query(app)?;
+            }
             "page-back" => self.query_page(app, self.page_offset.saturating_sub(PAGE_SIZE))?,
             "page-next" => self.query_page(app, self.page_offset.saturating_add(PAGE_SIZE))?,
             "tree-select" | "tree-toggle" => {
@@ -250,6 +261,13 @@ impl State {
             }
             "estimate" => self.estimate(app),
             "deep-search" => self.deep_search(app),
+            "deep-sort" => {
+                let ascending = app.get_deep_sort_column() != i as i32 || !app.get_deep_sort_ascending();
+                app.set_deep_sort_column(i as i32);
+                app.set_deep_sort_ascending(ascending);
+                let selected_id = selected(&self.hits, app.get_deep_selection()).map(|hit| hit.file_id);
+                self.render_deep_hits(app, selected_id);
+            }
             "deep-copy" | "deep-reveal" => if let Some(hit) = selected(&self.hits, app.get_deep_selection()) {
                 path_action(app, action == "deep-copy", &hit.full_path.to_string_lossy())?;
             },
@@ -373,6 +391,7 @@ impl State {
     }
 
     fn close(&mut self, app: &AppWindow) {
+        self.deep_generation.fetch_add(1, Ordering::Relaxed);
         self.overlay_generation += 1;
         self.removing = None;
         self.pending_import = None;
@@ -399,25 +418,31 @@ impl State {
     }
 
     fn query_page(&mut self, app: &AppWindow, offset: usize) -> EngineResult<()> {
-        self.query_generation += 1;
-        let generation = self.query_generation;
+        let requests = self.query_generation.clone();
+        let generation = requests.fetch_add(1, Ordering::Relaxed) + 1;
+        let columns = [FileSortColumn::Name, FileSortColumn::Extension, FileSortColumn::Path,
+            FileSortColumn::Volume, FileSortColumn::Status, FileSortColumn::Size, FileSortColumn::Modified];
+        let sort = selected(&columns, app.get_file_sort_column()).map(|&column| FileSort {
+            column, ascending: app.get_file_sort_ascending(),
+        });
         let filter = self.filter(app).inspect_err(|_| app.set_page_busy(false))?;
         let folder = self.current.clone().filter(|_| filter.query.is_empty() && filter.extension.is_none()
             && filter.min.is_none() && filter.max.is_none() && filter.online.is_none());
         app.set_page_busy(true);
         app.set_result_status("Loading…".into());
         self.work(app, move |catalog| {
+            if requests.load(Ordering::Relaxed) != generation { return Ok(None); }
             let started = Instant::now();
             let files = match folder {
-                Some((volume, rel)) => catalog.browse_folder_page(&volume, &rel, filter.include_removed, offset, PAGE_SIZE + 1)?,
-                None => catalog.search_page(&filter, offset, PAGE_SIZE + 1)?,
+                Some((volume, rel)) => catalog.browse_folder_page_sorted(&volume, &rel, filter.include_removed, offset, PAGE_SIZE + 1, sort)?,
+                None => catalog.search_page_sorted(&filter, offset, PAGE_SIZE + 1, sort)?,
             };
-            Ok((files, started.elapsed()))
+            Ok(Some((files, started.elapsed())))
         }, move |state, app, result| {
-            if state.query_generation != generation { return; }
+            if state.query_generation.load(Ordering::Relaxed) != generation { return; }
             app.set_page_busy(false);
             match result {
-                Ok((mut files, elapsed)) => {
+                Ok(Some((mut files, elapsed))) => {
                     let more = files.len() > PAGE_SIZE;
                     files.truncate(PAGE_SIZE);
                     state.page_offset = offset;
@@ -436,6 +461,7 @@ impl State {
                     app.set_selection(index.map_or(-1, |i| i as i32));
                     if index.is_none() { app.set_tags("".into()); app.set_note("".into()); }
                 }
+                Ok(None) => {}
                 Err(error) => app.set_result_status(error.to_string().into()),
             }
         });
@@ -612,14 +638,35 @@ impl State {
         self.render_choices(app);
     }
 
-    fn render_choices(&self, app: &AppWindow) {
-        app.set_choices(model(self.choices.iter().map(|v| DriveChoice {
-                        title: format!("{} · {}{}", volume_label(v), if v.online { "Online" } else { "Offline" },
-                if v.freshness_days > 0 && v.succeeded.is_none_or(|at| {
+    fn render_choices(&mut self, app: &AppWindow) {
+        self.choice_indices.clear();
+        let mut rows = Vec::new();
+        for (imported, header) in [(false, "Local drives (This PC)"), (true, "Imported drives (Other PCs)")] {
+            let mut group = self.choices.iter().enumerate()
+                .filter(|(_, v)| is_imported(v, &self.local_host) == imported).peekable();
+            if group.peek().is_none() { continue; }
+            rows.push(DriveChoice { title: header.into(), is_header: true, ..Default::default() });
+            self.choice_indices.push(None);
+            for (index, v) in group {
+                let overdue = v.freshness_days > 0 && v.succeeded.is_none_or(|at| {
                     util::now_ms().saturating_sub(at) >= i64::from(v.freshness_days) * 86_400_000
-                }) { " · Refresh overdue" } else { "" }).into(),
-            checked: self.checked.contains(&v.id),
-        })));
+                });
+                let status = if v.online { "Online" } else { "Offline" };
+                let title = format!("{} · {status}{}", volume_label(v), if overdue { " · Refresh overdue" } else { "" });
+                let badge = if imported { format!("Imported · {}", v.host) } else { format!("Local · {status}") };
+                rows.push(DriveChoice {
+                    title: title.into(), badge: badge.into(), checked: self.checked.contains(&v.id),
+                    is_header: false, imported,
+                });
+                self.choice_indices.push(Some(index));
+            }
+        }
+        app.set_choices(model(rows));
+    }
+
+    fn drive_choice(&self, row: i32) -> Option<&Volume> {
+        let index = (*selected(&self.choice_indices, row)?)?;
+        self.choices.get(index)
     }
 
     fn save_scope(&mut self, app: &AppWindow) -> EngineResult<()> {
@@ -633,16 +680,16 @@ impl State {
     }
 
     fn drive_action(&mut self, app: &AppWindow, action: &str, i: usize) -> EngineResult<()> {
-        let active = selected(&self.choices, app.get_dialog_selection()).cloned();
+        let active = self.drive_choice(app.get_dialog_selection()).cloned();
         match action {
             "drive-toggle" => {
-                if let Some(v) = self.choices.get(i) {
-                    if !self.checked.remove(&v.id) { self.checked.insert(v.id.clone()); }
+                if let Some(id) = self.drive_choice(i as i32).map(|v| v.id.clone()) {
+                    if !self.checked.remove(&id) { self.checked.insert(id); }
                     self.render_choices(app);
                     if app.get_overlay() == "library" { self.save_scope(app)?; }
                 }
             }
-            "drive-select" => if let Some(v) = self.choices.get(i) {
+            "drive-select" => if let Some(v) = self.drive_choice(i as i32) {
                 app.set_dialog_field(v.note.clone().into());
                 app.set_dialog_second(v.freshness_days.to_string().into());
             },
@@ -780,7 +827,7 @@ impl State {
         let index = |id: Option<String>| id.and_then(|id| self.deep_volumes.iter().position(|v| v.id == id))
             .map_or(0, |index| index as i32 + 1);
         app.set_deep_drives(model(std::iter::once(SharedString::from("All drives"))
-            .chain(self.deep_volumes.iter().map(|v| volume_label(v).into()))));
+            .chain(self.deep_volumes.iter().map(|v| content_volume_label(v, &self.local_host).into()))));
         app.set_deep_drive(index(search_id));
         app.set_scan_drive(index(scan_id));
     }
@@ -827,8 +874,9 @@ impl State {
     }
 
     fn deep_search(&mut self, app: &AppWindow) {
-        self.deep_generation += 1;
-        let generation = self.deep_generation;
+        let requests = self.deep_generation.clone();
+        let generation = requests.fetch_add(1, Ordering::Relaxed) + 1;
+        let local_host = self.local_host.clone();
         let query = app.get_deep_query().to_string();
         let extension = nonempty(app.get_deep_extension().trim());
         let volume = self.deep_volume(app.get_deep_drive());
@@ -837,31 +885,65 @@ impl State {
             fuzzy_matching: app.get_fuzzy(),
         };
         app.set_deep_close_match(false);
-        app.set_deep_status("Searching content…".into());
+        app.set_deep_status("Searching…".into());
         self.work(app, move |catalog| {
-            let index = ContentIndex::new(catalog);
+            if requests.load(Ordering::Relaxed) != generation { return Ok(None); }
+            let index = ContentIndex::new(catalog.clone());
             let started = Instant::now();
-            let result = index.search(&query, volume.as_deref(), extension.as_deref(), ROW_LIMIT, &options)?;
-            Ok((result, started.elapsed(), index.stats()?))
+            let mut result = index.search(&query, volume.as_deref(), extension.as_deref(), ROW_LIMIT, &options)?;
+            let elapsed = started.elapsed();
+            if requests.load(Ordering::Relaxed) != generation { return Ok(None); }
+            let labels: HashMap<_, _> = catalog.volumes()?.into_iter()
+                .map(|v| (v.id.clone(), content_volume_label(&v, &local_host))).collect();
+            for hit in &mut result.hits {
+                if let Some(label) = labels.get(&hit.volume) { hit.volume_label.clone_from(label); }
+            }
+            Ok(Some((result, elapsed, index.stats()?)))
         }, move |state, app, result| {
-            if state.deep_generation != generation { return; }
+            if state.deep_generation.load(Ordering::Relaxed) != generation { return; }
             match result {
-                Ok((found, elapsed, stats)) => {
+                Ok(Some((found, elapsed, stats))) => {
                     let corrections = if found.fuzzy_corrections.is_empty() { String::new() } else { format!(" · Typo match: {}", found.fuzzy_corrections.join(", ")) };
                     app.set_deep_close_match(found.used_relaxed_match);
                     app.set_deep_status(format!("{} matches · {} ms{} · {} indexed files · {} DB{}",
                         found.hits.len(), elapsed.as_millis(), corrections,
                         stats.indexed_files, util::format_bytes(stats.database_bytes), if found.summary.is_empty() { String::new() } else { format!(" · {}", found.summary) }).into());
-                    app.set_deep_rows(model(found.hits.iter().map(|hit| DataRow {
-                        a: hit.name.as_str().into(), b: hit.volume_label.as_str().into(), c: hit.snippet.as_str().into(),
-                        d: bytes(hit.bytes).into(), e: util::format_local_time(hit.modified).into(), ..Default::default()
-                    })));
                     state.hits = found.hits;
-                    app.set_deep_selection(-1);
+                    state.render_deep_hits(app, None);
                 }
+                Ok(None) => {}
                 Err(error) => app.set_deep_status(error.to_string().into()),
             }
         });
+    }
+
+    fn render_deep_hits(&mut self, app: &AppWindow, selected_id: Option<i64>) {
+        let column = app.get_deep_sort_column();
+        let descending = !app.get_deep_sort_ascending();
+        let direction = |order: std::cmp::Ordering| if descending { order.reverse() } else { order };
+        match column {
+            0..=2 => {
+                let key = |hit: &ContentSearchHit| match column {
+                    0 => hit.name.to_lowercase(),
+                    1 => hit.volume_label.to_lowercase(),
+                    _ => hit.snippet.to_lowercase(),
+                };
+                if descending {
+                    self.hits.sort_by_cached_key(|hit| (std::cmp::Reverse(key(hit)), hit.file_id));
+                } else {
+                    self.hits.sort_by_cached_key(|hit| (key(hit), hit.file_id));
+                }
+            }
+            3 => self.hits.sort_by(|a, b| direction(a.bytes.cmp(&b.bytes)).then(a.file_id.cmp(&b.file_id))),
+            4 => self.hits.sort_by(|a, b| direction(a.modified.cmp(&b.modified)).then(a.file_id.cmp(&b.file_id))),
+            _ => {} // The index returns hits in relevance order.
+        }
+        app.set_deep_rows(model(self.hits.iter().map(|hit| DataRow {
+            a: hit.name.as_str().into(), b: hit.volume_label.as_str().into(), c: hit.snippet.as_str().into(),
+            d: bytes(hit.bytes).into(), e: util::format_local_time(hit.modified).into(), ..Default::default()
+        })));
+        let selection = selected_id.and_then(|id| self.hits.iter().position(|hit| hit.file_id == id));
+        app.set_deep_selection(selection.map_or(-1, |i| i as i32));
     }
 
     fn scan_content(&mut self, app: &AppWindow) {
@@ -1267,7 +1349,16 @@ fn number(value: &str) -> EngineResult<Option<i64>> {
 }
 
 fn volume_label(v: &Volume) -> String {
-    if v.label.is_empty() { v.mount.clone() } else { format!("{}  {}", v.mount, v.label) }
+    if v.label.is_empty() || v.label.eq_ignore_ascii_case(&v.mount) { v.mount.clone() } else { format!("{}  {}", v.mount, v.label) }
+}
+
+fn is_imported(v: &Volume, local_host: &str) -> bool {
+    !v.host.is_empty() && !v.host.eq_ignore_ascii_case(local_host)
+}
+
+fn content_volume_label(v: &Volume, local_host: &str) -> String {
+    let label = volume_label(v);
+    if is_imported(v, local_host) { format!("{label} · {}", v.host) } else { label }
 }
 
 fn file_row(f: &FileEntry) -> DataRow {
