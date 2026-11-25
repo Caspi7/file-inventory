@@ -5,6 +5,9 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.19
+        • Multi-drive scan picker: clicking "Scan drives…" opens a themed dialog to select one, multiple, or all online drives to scan at once (with Select all / Select none buttons).
+
         File Inventory 1.2.18
         • System/host ownership & removable drive tracking: each scanned drive records its owning PC (host) and Fixed vs. Removable type, synced across machines via Cloud Sync & exports.
         • Hardware volume IDs automatically update ownership if a drive is moved to another PC; Browse drive, Drive Library, search results, and file details now clearly show the owning system.
