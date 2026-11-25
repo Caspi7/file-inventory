@@ -7,6 +7,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.5
+        • Matching custom Fluent vector icons unify the command bar, filters, dialog buttons, and More menu.
+        • The storage visualization is now labeled Storage Map throughout the app.
+
         File Inventory 1.3.4
         • Browse drive shows the drives checked in Drive Library.
         • Cloud Sync settings are available beside Sync, and the Sync tooltip shows the configured folder.
@@ -337,6 +341,7 @@ sealed partial class InventoryWindow
             Padding = new Padding(12, 6, 12, 8)
         };
         var accept = new Button { Text = "Accept & Install Now", DialogResult = DialogResult.OK, AutoSize = true };
+        Theme.SetIcon(accept, FluentIcon.Check);
         var later = new Button { Text = "Later", DialogResult = DialogResult.Cancel, AutoSize = true };
         buttons.Controls.AddRange([later, accept]);
 
