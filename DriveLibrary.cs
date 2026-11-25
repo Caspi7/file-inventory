@@ -60,6 +60,10 @@ sealed partial class InventoryWindow
         var reminder = new NumericUpDown { Minimum = 0, Maximum = int.MaxValue, Width = 90,
             AccessibleName = "Remind after (days), zero turns reminders off" };
         var saveNote = new Button { Text = "Save drive note", AutoSize = true };
+        Theme.SetIcon(import, FluentIcon.Import);
+        Theme.SetIcon(export, FluentIcon.Export);
+        Theme.SetIcon(report, FluentIcon.Export);
+        Theme.SetIcon(saveNote, FluentIcon.Save);
         var editor = Flow();
         editor.Controls.AddRange([LabelFor("Location note"), note, LabelFor("Remind after (days)"), reminder, saveNote]);
         var apply = new Button { Text = "Apply", AutoSize = true, DialogResult = DialogResult.OK };
