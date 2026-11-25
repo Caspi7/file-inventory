@@ -11,6 +11,7 @@ use slint::{Color, ComponentHandle, ModelRc, SharedString, Timer, TimerMode, Vec
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fs::File,
     path::PathBuf,
     rc::Rc,
     sync::{atomic::{AtomicBool, AtomicU64, Ordering}, mpsc, Arc},
@@ -99,11 +100,14 @@ struct State {
     config: CloudSyncConfig,
     pending_import: Option<PathBuf>,
     removing: Option<Volume>,
-    release_url: String,
+    session: Rc<RefCell<Option<File>>>,
+    auto_update_check: bool,
+    pending_update: Option<updates::Release>,
 }
 
-pub fn bind(app: &AppWindow, catalog: Catalog) {
+pub fn bind(app: &AppWindow, catalog: Catalog, session: Rc<RefCell<Option<File>>>) {
     let (tx, rx) = mpsc::channel();
+    let auto_update_check = updates::load_auto_check(&catalog.data_dir);
     let state = Rc::new(RefCell::new(State {
         theme: util::load_theme(&catalog.data_dir),
         visible: util::load_selected_drives(&catalog.data_dir),
@@ -119,7 +123,7 @@ pub fn bind(app: &AppWindow, catalog: Catalog) {
         checked: HashSet::new(), commands: Vec::new(), groups: Vec::new(),
         dialog_files: Vec::new(), history: Vec::new(), hits: Vec::new(), deep_volumes: Vec::new(), map_volumes: Vec::new(),
         map_path: String::new(), tiles: Vec::new(), providers: Vec::new(), pending_import: None,
-        removing: None, release_url: String::new(),
+        removing: None, session, auto_update_check, pending_update: None,
     }));
     let weak = app.as_weak();
     let actions = state.clone();
@@ -128,10 +132,23 @@ pub fn bind(app: &AppWindow, catalog: Catalog) {
             actions.borrow_mut().dispatch(&app, name.as_str(), index.max(0) as usize);
         }
     });
+    let weak = app.as_weak();
+    app.window().on_close_requested(move || {
+        if let Some(app) = weak.upgrade() {
+            if app.get_update_installing() {
+                app.invoke_action("cancel".into(), 0);
+                return slint::CloseRequestResponse::KeepWindowShown;
+            }
+        }
+        slint::CloseRequestResponse::HideWindow
+    });
     let mut state = state.borrow_mut();
     state.apply_theme(app);
     state.show_saved(app);
     state.refresh_drives(app, true);
+    if auto_update_check {
+        state.check_updates(app, false);
+    }
     let weak = app.as_weak();
     state.refresh_timer.start(TimerMode::Repeated, Duration::from_secs(60), move || {
         if let Some(app) = weak.upgrade() {
@@ -351,9 +368,22 @@ impl State {
                 self.close(app);
                 self.handle(app, command, 0)?;
             },
-            "about" => self.about(app),
-            "updates" => self.check_updates(app),
-            "update-open" => open_url(&self.release_url)?,
+            "about" | "update-show" => self.about(app),
+            "updates" => self.check_updates(app, true),
+            "update-auto-toggle" => {
+                let enabled = app.get_dialog_flag();
+                if let Err(error) = updates::save_auto_check(&self.catalog.data_dir, enabled) {
+                    app.set_dialog_flag(self.auto_update_check);
+                    return Err(error);
+                }
+                self.auto_update_check = enabled;
+            }
+            "update-open" => {
+                if let Some(release) = &self.pending_update {
+                    open_url(&release.page_url())?;
+                }
+            }
+            "update-install" => self.install_update(app),
             "export" => if self.job.is_none() { self.open(app, action, "Export Report"); },
             "save-search" => { self.filter(app)?; self.open(app, action, "Save Search"); }
             "dialog-confirm" => self.confirm(app)?,
@@ -1187,28 +1217,86 @@ impl State {
     }
 
     fn about(&mut self, app: &AppWindow) {
-        self.open(app, "about", "Release Notes & About");
+        self.open(app, "about", "Updates & Release Notes");
         app.set_dialog_field(updates::FULL_RELEASE_NOTES.into());
-        app.set_dialog_flag(!self.release_url.is_empty());
+        app.set_dialog_flag(self.auto_update_check);
+        if app.get_update_checking() {
+            app.set_dialog_status("Checking for updates…".into());
+        }
     }
 
-    fn check_updates(&mut self, app: &AppWindow) {
-        if self.job.is_some() { message(app, "Wait for the current background operation to finish"); return; }
-        if app.get_overlay() != "about" { self.about(app); }
-        if self.begin(app, "updates", "Checking for updates…").is_none() { return; }
-        app.set_dialog_status(app.get_status());
+    fn check_updates(&mut self, app: &AppWindow, manual: bool) {
+        if manual {
+            if app.get_overlay() != "about" { self.about(app); }
+            app.set_dialog_status("Checking for updates…".into());
+        }
+        if app.get_update_checking() || app.get_update_installing() { return; }
+        app.set_update_checking(true);
         self.work(app, |_| updates::check_for_updates(), |state, app, result| {
-            let status = result.map(|release| {
-                if let Some(release) = release {
-                    state.release_url = release.download_url;
-                    format!("Version {} is available · {}", release.version, util::format_bytes(release.bytes))
-                } else {
-                    state.release_url.clear();
-                    format!("File Inventory {} is up to date", updates::APP_VERSION)
+            app.set_update_checking(false);
+            let status = match result {
+                Ok(release) => {
+                    if let Some(release) = &release {
+                        app.set_update_label(format!("Update v{}", release.version).into());
+                        app.set_update_summary(format!("File Inventory v{} · {}", release.version,
+                            util::format_bytes(release.bytes)).into());
+                        app.set_update_notes(release.notes.trim().into());
+                    } else {
+                        app.set_update_label("".into());
+                        app.set_update_summary("".into());
+                        app.set_update_notes("".into());
+                    }
+                    state.pending_update = release;
+                    if state.pending_update.is_some() { String::new() }
+                    else { format!("You are on the latest version ({}).", updates::APP_VERSION) }
                 }
+                Err(error) => format!("Update check failed: {error}"),
+            };
+            if app.get_overlay() == "about" {
+                app.set_dialog_status(status.into());
+            }
+        });
+    }
+
+    fn install_update(&mut self, app: &AppWindow) {
+        if app.get_update_checking() { return; }
+        let Some(release) = self.pending_update.clone() else { return; };
+        let status = format!("Downloading v{}… {} / {}", release.version,
+            util::format_bytes(0), util::format_bytes(release.bytes));
+        let Some(cancel) = self.begin(app, "update-install", &status) else { return; };
+        app.set_dialog_status("".into());
+        app.set_update_installing(true);
+        let weak = app.as_weak();
+        let download_cancel = cancel.clone();
+        self.work(app, move |_| {
+            updates::download_installer(&release, &download_cancel, |downloaded, total| {
+                post_progress(&weak, &download_cancel, downloaded as f32 / total as f32,
+                    format!("Downloading v{}… {} / {}", release.version,
+                        util::format_bytes(downloaded), util::format_bytes(total)), false);
+            })
+        }, move |state, app, result| {
+            let outcome = result.and_then(|path| {
+                if cancel.load(Ordering::Relaxed) {
+                    let _ = std::fs::remove_file(path);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "Operation cancelled").into());
+                }
+                drop(state.session.borrow_mut().take());
+                if let Err(error) = updates::launch_installer(&path) {
+                    let _ = std::fs::remove_file(path);
+                    match state.catalog.start_session() {
+                        Ok(lock) => *state.session.borrow_mut() = Some(lock),
+                        Err(lock_error) => {
+                            let _ = slint::quit_event_loop();
+                            return Err(format!("Couldn't start the installer ({error}) or reclaim the instance lock ({lock_error}).").into());
+                        }
+                    }
+                    return Err(format!("Couldn't start the installer: {error}").into());
+                }
+                slint::quit_event_loop()?;
+                Ok("Starting the update installer…".into())
             });
-            if app.get_overlay() == "about" { app.set_dialog_flag(!state.release_url.is_empty()); }
-            state.end(app, status);
+            app.set_update_installing(false);
+            state.end(app, outcome);
         });
     }
 
