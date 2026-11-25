@@ -13,7 +13,7 @@ static class AppUpdates
     const long MaximumInstallerBytes = 150_000_000;
     static readonly HttpClient Http = new();
 
-    internal record Release(Version Version, Uri DownloadUrl, long Bytes, string Sha256);
+    internal record Release(Version Version, Uri DownloadUrl, long Bytes, string Sha256, string Notes = "");
     public static Version CurrentVersion => typeof(AppUpdates).Assembly.GetName().Version ?? new(0, 0, 0);
 
     public static bool IsInstalledHere()
@@ -61,7 +61,8 @@ static class AppUpdates
 
                 var url = new Uri($"https://github.com/{Repository}/releases/download/{tag}/{filename}");
                 if (asset.GetProperty("browser_download_url").GetString() != url.AbsoluteUri) continue;
-                best = new(version, url, bytes, digest[7..]);
+                string notes = release.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
+                best = new(version, url, bytes, digest[7..], notes);
                 break;
             }
         }
