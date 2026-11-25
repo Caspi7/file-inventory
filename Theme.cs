@@ -710,12 +710,38 @@ static class Theme
             g.FillRectangle(clearBrush, b.ClientRectangle);
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var rect = new RectangleF(0.5f, 0.5f, Math.Max(1f, b.Width - 1.5f), Math.Max(1f, b.Height - 1.5f));
-        using var path = CreateRoundedRect(rect, 5f);
-        using (var fillBrush = new SolidBrush(fill))
-            g.FillPath(fillBrush, path);
-        using (var borderPen = new Pen(border, 1f))
-            g.DrawPath(borderPen, path);
+        bool isCommandBarBtn = Equals(b.Tag, "command-bar-btn");
+        if (isCommandBarBtn)
+        {
+            float r = 6f;
+            float d = r * 2f;
+            float left = 0.5f, top = 0.5f, right = Math.Max(left + d, b.Width - 1f), bottom = b.Height;
+            using var tabFill = new GraphicsPath();
+            tabFill.AddLine(left, bottom, left, top + r);
+            tabFill.AddArc(left, top, d, d, 180f, 90f);
+            tabFill.AddArc(right - d, top, d, d, 270f, 90f);
+            tabFill.AddLine(right, top + r, right, bottom);
+            tabFill.CloseFigure();
+            using (var fillBrush = new SolidBrush(fill))
+                g.FillPath(fillBrush, tabFill);
+
+            using var tabBorder = new GraphicsPath();
+            tabBorder.AddLine(left, bottom, left, top + r);
+            tabBorder.AddArc(left, top, d, d, 180f, 90f);
+            tabBorder.AddArc(right - d, top, d, d, 270f, 90f);
+            tabBorder.AddLine(right, top + r, right, bottom);
+            using (var borderPen = new Pen(border, 1f))
+                g.DrawPath(borderPen, tabBorder);
+        }
+        else
+        {
+            var rect = new RectangleF(0.5f, 0.5f, Math.Max(1f, b.Width - 1.5f), Math.Max(1f, b.Height - 1.5f));
+            using var path = CreateRoundedRect(rect, 5f);
+            using (var fillBrush = new SolidBrush(fill))
+                g.FillPath(fillBrush, path);
+            using (var borderPen = new Pen(border, 1f))
+                g.DrawPath(borderPen, path);
+        }
 
         if (b.Focused && b.Enabled)
         {
