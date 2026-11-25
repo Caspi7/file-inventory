@@ -2,9 +2,14 @@
 use crate::{content::ContentMatchMode, util::words};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct Term { pub text: String, pub prefix: bool, pub phrase: bool }
+pub(crate) struct Term {
+    pub text: String,
+    pub prefix: bool,
+    pub phrase: bool,
+    verbatim: bool,
+}
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) enum Node {
     Term(Term),
     Not(Box<Node>),
@@ -20,14 +25,6 @@ impl Node {
             Self::Term(_) => {},
             Self::Not(node) => node.positive(!excluded,terms),
             Self::Join(a,b,_) => { a.positive(excluded,terms); b.positive(excluded,terms); }
-        }
-    }
-
-    pub fn exclusions<'a>(&'a self, output: &mut Vec<&'a Self>) {
-        match self {
-            Self::Not(_) => output.push(self),
-            Self::Join(a,b,false) => { a.exclusions(output); b.exclusions(output); }
-            _=>{},
         }
     }
 
@@ -56,7 +53,7 @@ impl Node {
 impl Term {
     pub fn render(&self,corrections:&HashMap<String,Vec<String>>,excluded:bool)->String {
         let exact=quote(&self.text,self.prefix);
-        if excluded || self.prefix || corrections.is_empty() { return exact; }
+        if excluded || self.prefix || self.verbatim || corrections.is_empty() { return exact; }
         if !self.phrase {
             return corrections.get(&self.text.to_lowercase()).map_or_else(||exact.clone(), |alternatives| {
                 format!("({exact} OR {})",alternatives.iter().map(|word|quote(word,true)).collect::<Vec<_>>().join(" OR "))
@@ -86,7 +83,7 @@ pub(crate) fn parse(input:&str,mode:ContentMatchMode)->Option<(Node,bool)> {
     if input.encode_utf16().count()>4096 { return None; }
     if mode==ContentMatchMode::ExactPhrase {
         let text=words(input).collect::<Vec<_>>().join(" ");
-        return (!text.is_empty()).then_some((Node::Term(Term{text,prefix:false,phrase:true}),false));
+        return (!text.is_empty()).then_some((Node::Term(Term{text,prefix:false,phrase:true,verbatim:false}),false));
     }
     static TOKENS:OnceLock<regex::Regex>=OnceLock::new();
     let re=TOKENS.get_or_init(||regex::Regex::new(r#""[^"]*"|"|&&|\|\|?|[()-]|[\p{L}\p{N}][\p{L}\p{M}\p{N}]*\*?"#).unwrap());
@@ -97,6 +94,88 @@ pub(crate) fn parse(input:&str,mode:ContentMatchMode)->Option<(Node,bool)> {
     let mut parser=Parser{tokens,index:0,explicit:false,any:mode==ContentMatchMode::AnyWord};
     let root=parser.or(0)?;
     (parser.index==parser.tokens.len()).then_some((root,parser.explicit))
+}
+
+const STOP_WORDS: &str = "a an the and or of to in on for with about from by at as is are was were be been that this these those it its my your our their file files document documents looking find search show me please something where what when how into onto over under between through during before after above below up down out off all any both each few more most other some such only own same so than too very can will just should now de het een van voor met over naar uit dat die dit mijn bestand bestanden zoek zoeken vind geef toon als ook graag en of ik je";
+
+pub(crate) struct SmartQuery {
+    pub groups: Vec<Node>,
+    pub excluded: Vec<Node>,
+    pub inferred: Vec<String>,
+}
+
+impl SmartQuery {
+    pub fn root(&self) -> Node {
+        let include = self.groups.iter().cloned().reduce(|a, b| a.join(b, true)).unwrap();
+        self.excluded.iter().cloned().fold(include, |root, exclusion| {
+            root.join(Node::Not(Box::new(exclusion)), false)
+        })
+    }
+}
+
+// None delegates to the Boolean parser. Some(None) is an invalid natural query.
+pub(crate) fn smart(input: &str) -> Option<Option<SmartQuery>> {
+    if input.encode_utf16().count() > 4096 { return Some(None); }
+    static TOKENS: OnceLock<regex::Regex> = OnceLock::new();
+    let re = TOKENS.get_or_init(|| regex::Regex::new(
+        r#""[^"]*"|"|&&|\|\|?|[()/\-]|[\p{L}\p{N}][\p{L}\p{M}\p{N}]*\*?"#
+    ).unwrap());
+    let tokens: Vec<_> = re.find_iter(input).filter(|m| {
+        match m.as_str() {
+            "-" => !input[..m.start()].chars().next_back().is_some_and(char::is_alphanumeric),
+            "/" => input[..m.start()].ends_with(|c: char| c.is_alphanumeric() || c == '*' || c == '"')
+                && input[m.end()..].starts_with(|c: char| c.is_alphanumeric() || c == '"'),
+            _ => true,
+        }
+    }).map(|m| m.as_str()).take(97).collect();
+    if tokens.iter().any(|token| matches!(*token, "AND" | "OR" | "NOT" | "(" | ")" | "&&" | "|" | "||")) {
+        return None;
+    }
+    Some(natural_query(&tokens))
+}
+
+fn natural_query(tokens: &[&str]) -> Option<SmartQuery> {
+    if tokens.len() > 96 || tokens.iter().filter(|t| words(t).next().is_some()).count() > 32 {
+        return None;
+    }
+    let mut tokens = tokens.iter().copied().peekable();
+    let mut query = SmartQuery { groups: Vec::new(), excluded: Vec::new(), inferred: Vec::new() };
+    while let Some(token) = tokens.next() {
+        let inferred = matches!(token.to_ascii_lowercase().as_str(),
+            "without" | "except" | "excluding" | "exclude" | "not" | "zonder" | "behalve" | "niet")
+            && tokens.peek().is_some_and(|next| words(next).next().is_some());
+        let excluded = inferred || token == "-";
+        let token = if excluded { tokens.next()? } else { token };
+        let mut group = natural_term(token)?;
+        let mut alternatives = vec![token.trim_matches('"')];
+        while tokens.next_if_eq(&"/").is_some() {
+            let alternative = tokens.next()?;
+            group = group.join(natural_term(alternative)?, true);
+            alternatives.push(alternative.trim_matches('"'));
+        }
+        if excluded {
+            query.excluded.push(group);
+            if inferred { query.inferred.push(alternatives.join(" / ")); }
+        } else if !query.groups.contains(&group) {
+            query.groups.push(group);
+        }
+    }
+    let content_group = |group: &Node| !matches!(group, Node::Term(term)
+        if !term.prefix && !term.phrase && STOP_WORDS.split_ascii_whitespace()
+            .any(|word| word.eq_ignore_ascii_case(&term.text)));
+    if query.groups.iter().filter(|group| content_group(group)).count() >= 2 {
+        query.groups.retain(content_group);
+    }
+    (!query.groups.is_empty()).then_some(query)
+}
+
+fn natural_term(token: &str) -> Option<Node> {
+    let phrase = token.starts_with('"');
+    let prefix = token.ends_with('*');
+    let text = words(token).collect::<Vec<_>>().join(" ");
+    (!text.is_empty()).then_some(Node::Term(Term {
+        text: text.to_lowercase(), prefix, phrase, verbatim: phrase,
+    }))
 }
 
 struct Parser<'a> { tokens:Vec<&'a str>,index:usize,explicit:bool,any:bool }
@@ -162,7 +241,7 @@ impl<'a> Parser<'a> {
                 let prefix=token.ends_with('*');
                 let text=if phrase { words(token).collect::<Vec<_>>().join(" ") }
                     else { token.trim_end_matches('*').to_owned() };
-                (!text.is_empty()).then_some(Node::Term(Term{text,prefix,phrase}))
+                (!text.is_empty()).then_some(Node::Term(Term{text,prefix,phrase,verbatim:false}))
             }
         }
     }
