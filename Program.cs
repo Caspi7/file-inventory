@@ -105,7 +105,7 @@ sealed partial class InventoryWindow : Form
         this.catalog = catalog;
         this.benchmark = benchmark;
         scanner = new(catalog);
-        Text = benchmark ? "File Inventory 1.2.15 · Benchmark" : "File Inventory 1.2.15";
+        Text = benchmark ? "File Inventory 1.2.16 · Benchmark" : "File Inventory 1.2.16";
         Icon = appIcon;
         tray.Icon = appIcon;
         Width = 1370;
@@ -395,8 +395,9 @@ sealed partial class InventoryWindow : Form
     async Task ObserveScan(string id)
     {
         var scan = running[id];
+        bool scanFailed = false;
         try { await scan.Work; }
-        catch (Exception ex) { if (!closing) state.Text = ex.Message; }
+        catch (Exception ex) { scanFailed = true; if (!closing) state.Text = ex.Message; }
         finally
         {
             running.Remove(id);
@@ -410,6 +411,8 @@ sealed partial class InventoryWindow : Form
             await ReloadVolumes();
             ResetTree();
             QueueSearch();
+            if (!scanFailed && !benchmark)
+                _ = TryAutoSyncAfterScanAsync();
         }
     }
 
@@ -506,6 +509,7 @@ sealed partial class InventoryWindow : Form
         closing = true;
         queryCancellation?.Cancel();
         pageCancellation.Cancel();
+        syncCancellation?.Cancel();
         scanUiTimer.Stop();
         heartbeat.Stop();
         var scans = running.Values.ToArray();
