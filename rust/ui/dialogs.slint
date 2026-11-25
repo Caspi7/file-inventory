@@ -2,7 +2,7 @@ import { LineEdit, ComboBox, CheckBox, ListView, ScrollView } from "std-widgets.
 import { Action, Label, DataRow, Grid, Tile } from "controls.slint";
 import { Palette } from "theme.slint";
 
-export struct DriveChoice { title: string, checked: bool }
+export struct DriveChoice { title: string, badge: string, checked: bool, is-header: bool, imported: bool }
 
 export component DialogBody inherits VerticalLayout {
     in property <string> mode;
@@ -28,12 +28,35 @@ export component DialogBody inherits VerticalLayout {
     if root.mode == "picker" || root.mode == "library" || root.mode == "scope" : ListView {
         vertical-stretch: 1;
         for drive[i] in root.choices : Rectangle {
-            height: 34px;
-            background: i == root.selection ? Palette.surface-hover : Palette.surface;
-            HorizontalLayout {
-                padding-left: 9px; spacing: 8px;
+            height: drive.is-header ? 29px : 36px;
+            clip: true;
+            background: drive.is-header ? Palette.header-bg : i == root.selection || row-hit.has-hover ? Palette.surface-hover : Palette.surface;
+            row-hit := TouchArea {
+                enabled: !drive.is-header;
+                mouse-cursor: pointer;
+                clicked => {
+                    if root.mode == "library" { root.selection = i; root.action("drive-select", i); }
+                    else { root.action("drive-toggle", i); }
+                }
+            }
+            if drive.is-header : Label {
+                x: 9px; width: parent.width - 18px;
+                text: drive.title; font-weight: 650; color: Palette.muted;
+            }
+            if !drive.is-header : HorizontalLayout {
+                padding-left: 9px; padding-right: 9px; spacing: 8px;
                 CheckBox { checked: drive.checked; toggled => { root.action("drive-toggle", i); } }
-                Action { label: drive.title; horizontal-stretch: 1; clicked => { root.selection = i; root.action("drive-select", i); } }
+                Label { text: drive.title; preferred-width: 0px; horizontal-stretch: 1; }
+                Rectangle {
+                    width: min(badge-text.preferred-width + 16px, 166px); height: 24px;
+                    border-radius: 12px; border-width: 1px;
+                    border-color: drive.imported ? Palette.accent : Palette.border;
+                    background: drive.imported ? Palette.surface-hover : Palette.surface-readonly;
+                    badge-text := Label {
+                        x: 8px; width: parent.width - 16px;
+                        text: drive.badge; color: drive.imported ? Palette.fg : Palette.muted;
+                    }
+                }
             }
         }
     }
@@ -61,14 +84,14 @@ export component DialogBody inherits VerticalLayout {
         }
     }
     if root.mode == "duplicates" || root.mode == "changes" || root.mode == "copies" : Grid {
-        rows: root.rows; compact: true; vertical-stretch: 1; selection <=> root.selection;
+        rows: root.rows; column-mode: "dialog"; vertical-stretch: 1; selection <=> root.selection;
         headers: root.mode == "changes" ? { a: "Volume", b: "Outcome", c: "Scan time and changes", d: "Bytes delta" }
             : root.mode == "copies" ? { a: "Filename", b: "Volume", c: "Full path", d: "Size" }
             : { a: "Group", b: "Size", c: "SHA-256" };
         selected(i) => { root.action("dialog-select", i); }
     }
     if root.mode == "duplicates" || root.mode == "changes" : Grid {
-        rows: root.details; compact: true; vertical-stretch: 1; selection <=> root.detail-selection;
+        rows: root.details; column-mode: "dialog"; vertical-stretch: 1; selection <=> root.detail-selection;
         headers: root.mode == "changes" ? { a: "Change", b: "Old bytes", c: "Path", d: "New bytes" } : { a: "Filename", b: "Volume", c: "Full path", d: "Status" };
     }
     if root.mode == "duplicates" || root.mode == "copies" : HorizontalLayout {
