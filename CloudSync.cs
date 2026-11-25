@@ -473,16 +473,21 @@ static class CloudSync
 
 sealed partial class InventoryWindow
 {
-    readonly Button syncButton = new() { Text = "☁ Sync", AutoSize = true };
-    readonly Button syncSettingsButton = new() { Text = "⚙", Width = 34, AccessibleName = "Cloud Sync settings" };
+    readonly Button syncButton = new() { Text = "Sync", AutoSize = true };
+    readonly Button syncSettingsButton = new() { Width = 34, AccessibleName = "Cloud Sync settings" };
     bool syncingCloud;
     CancellationTokenSource? syncCancellation;
 
     void InitializeSync()
     {
+        Theme.SetIcon(syncButton, FluentIcon.Sync);
+        Theme.SetIcon(syncSettingsButton, FluentIcon.Settings);
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Sync now", null, async (_, _) => await HandleSyncButtonClickAsync());
-        menu.Items.Add("Sync settings…", null, async (_, _) => await OpenSyncDialogAsync());
+        var syncNow = new ToolStripMenuItem("Sync now", null, async (_, _) => await HandleSyncButtonClickAsync());
+        var syncSettings = new ToolStripMenuItem("Sync settings…", null, async (_, _) => await OpenSyncDialogAsync());
+        menu.Items.AddRange([syncNow, syncSettings]);
+        Theme.SetMenuIcon(menu, syncNow, FluentIcon.Sync);
+        Theme.SetMenuIcon(menu, syncSettings, FluentIcon.Settings);
         syncButton.ContextMenuStrip = menu;
         syncButton.Click += async (_, _) => await HandleSyncButtonClickAsync();
         syncSettingsButton.Click += async (_, _) => await OpenSyncDialogAsync();
@@ -541,6 +546,7 @@ sealed partial class InventoryWindow
             PlaceholderText = @"e.g. G:\My Drive\FileInventorySync"
         };
         var browseFolder = new Button { Text = "Browse…", AutoSize = true };
+        Theme.SetIcon(browseFolder, FluentIcon.FolderOpen);
         browseFolder.Click += (_, _) =>
         {
             using var picker = new FolderBrowserDialog
@@ -615,6 +621,8 @@ sealed partial class InventoryWindow
 
         var syncNowButton = new Button { Text = "Sync Now", AutoSize = true };
         var saveButton = new Button { Text = "Save", AutoSize = true };
+        Theme.SetIcon(syncNowButton, FluentIcon.Sync);
+        Theme.SetIcon(saveButton, FluentIcon.Save);
         var closeButton = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel };
 
         syncNowButton.Click += (_, _) =>
