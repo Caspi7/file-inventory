@@ -5,6 +5,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.2.15
+        • Saved theme preference across restarts (no longer resets to Light mode).
+        • Added a 3rd VS Code-inspired Dark Blue theme (cycle Theme: Light → Dark → Dark Blue).
+
         File Inventory 1.2.14
         • Full scrollable Release Notes history (1.1.0-preview through 1.2.14) in a themed dialog.
 
@@ -181,7 +185,7 @@ sealed partial class InventoryWindow
         dialog.Controls.AddRange([notesPanel, header, buttons]);
         dialog.AcceptButton = close;
         dialog.CancelButton = close;
-        dialog.Load += (_, _) => Theme.Apply(dialog, darkMode);
+        dialog.Load += (_, _) => Theme.Apply(dialog, currentTheme);
         dialog.ShowDialog(this);
     }
 
@@ -234,7 +238,7 @@ sealed partial class InventoryWindow
         dialog.Controls.AddRange([notesPanel, header, buttons]);
         dialog.AcceptButton = accept;
         dialog.CancelButton = later;
-        dialog.Load += (_, _) => Theme.Apply(dialog, darkMode);
+        dialog.Load += (_, _) => Theme.Apply(dialog, currentTheme);
         return dialog.ShowDialog(this) == DialogResult.OK;
     }
 
