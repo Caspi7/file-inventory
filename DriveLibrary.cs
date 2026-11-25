@@ -236,22 +236,17 @@ sealed partial class InventoryWindow
 
     void WriteDriveReport(string driveId, string destination, InventoryExportFormat format, string title)
     {
-        string? template = null;
         string? temporaryTemplate = null;
         try
         {
             if (format == InventoryExportFormat.Html)
             {
-                template = Path.Combine(AppContext.BaseDirectory, "ReportTemplate.html");
-                if (!File.Exists(template))
-                {
-                    // Single-file builds do not ship the source template beside the executable.
-                    temporaryTemplate = Path.GetTempFileName();
-                    File.WriteAllText(temporaryTemplate, StandaloneReportTemplate);
-                    template = temporaryTemplate;
-                }
+                var contents = UiHelpers.LoadEmbeddedText("ReportTemplate.html")
+                    ?? File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ReportTemplate.html"));
+                temporaryTemplate = Path.GetTempFileName();
+                File.WriteAllText(temporaryTemplate, contents);
             }
-            InventoryExport.Write(destination, Rows(), format, title, template);
+            InventoryExport.Write(destination, Rows(), format, title, temporaryTemplate);
         }
         finally
         {
@@ -267,62 +262,4 @@ sealed partial class InventoryWindow
                     if (hit is not null) yield return hit;
         }
     }
-
-    // Keep in sync with ReportTemplate.html for deployments without a loose template.
-    const string StandaloneReportTemplate = """
-    <!doctype html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>{{TITLE}}</title>
-      <style>
-        :root { color-scheme: light dark; }
-        body { margin: 2rem auto; padding: 0 1rem; max-width: 100rem; font: 1rem/1.5 system-ui, sans-serif; }
-        h1 { margin: 0 0 1rem; }
-        .table { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
-        th, td { padding: .5rem .75rem; border-bottom: 1px solid GrayText; vertical-align: top; }
-        th { white-space: nowrap; }
-        td { overflow-wrap: anywhere; }
-        td:nth-child(7) { text-align: right; font-variant-numeric: tabular-nums; }
-        tbody tr:nth-child(even) { background: color-mix(in srgb, CanvasText 6%, Canvas); }
-        @media print {
-          body { margin: 0; padding: 0; }
-          .table { overflow: visible; }
-          table { table-layout: fixed; font-size: 8pt; }
-          th { white-space: normal; }
-          th, td { padding: .2rem; }
-          tr { break-inside: avoid; }
-        }
-      </style>
-    </head>
-    <body>
-      <main>
-        <h1 id="report-title">{{TITLE}}</h1>
-        <div class="table" role="region" aria-labelledby="report-title" tabindex="0">
-          <table aria-labelledby="report-title">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Full path</th>
-                <th scope="col">Relative path</th>
-                <th scope="col">Volume ID</th>
-                <th scope="col">Drive label</th>
-                <th scope="col">Status</th>
-                <th scope="col">Bytes</th>
-                <th scope="col">Modified</th>
-                <th scope="col">Last seen</th>
-                <th scope="col">Kind</th>
-              </tr>
-            </thead>
-            <tbody>
-    {{ROWS}}
-            </tbody>
-          </table>
-        </div>
-      </main>
-    </body>
-    </html>
-    """;
 }
