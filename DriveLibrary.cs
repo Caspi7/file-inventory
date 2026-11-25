@@ -2,7 +2,7 @@
 
 sealed partial class InventoryWindow
 {
-    readonly Button library = new() { Text = "Drive Library…", AutoSize = true };
+    readonly Button library = new() { Text = "Drives", AutoSize = true };
     readonly Button searchDrive = new() { Text = "Search this drive", AutoSize = true };
     readonly CheckBox includeRemoved = new() { Text = "Show removed files", Checked = true, AutoSize = true };
     readonly ToolTip inventoryTips = new();
@@ -122,6 +122,7 @@ sealed partial class InventoryWindow
         {
             if (list.SelectedIndex < 0) return;
             using var picker = new SaveFileDialog { Filter = archiveFilter, DefaultExt = "fiinventory",
+                FileName = CloudSync.SnapshotDisplayName(Environment.MachineName, scanned[list.SelectedIndex]) + ".fiinventory",
                 AddExtension = true, Title = "Export file and folder names, paths, and dates" };
             if (picker.ShowDialog(window) != DialogResult.OK) return;
             if (!string.Equals(Path.GetExtension(picker.FileName), ".fiinventory", StringComparison.OrdinalIgnoreCase))
