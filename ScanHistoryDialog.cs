@@ -1,4 +1,3 @@
-using System.Diagnostics;
 
 namespace FileInventory;
 
@@ -175,8 +174,7 @@ sealed class ScanHistoryDialog : Form
     void CopyPath()
     {
         if (SelectedVolume is not { } volume || SelectedChange is not { } change) return;
-        try { Clipboard.SetText(Path.Combine(volume.Mount, change.Rel)); }
-        catch (Exception ex) { ShowError(ex.Message); }
+        UiHelpers.CopyText(Path.Combine(volume.Mount, change.Rel), this);
     }
 
     async Task RevealAsync()
@@ -192,8 +190,7 @@ sealed class ScanHistoryDialog : Form
                 ShowError("The selected path is unavailable.");
                 return;
             }
-            using var explorer = Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
-                { UseShellExecute = true });
+            UiHelpers.RevealInExplorer(path, this);
         }
         catch (Exception ex) { if (!IsDisposed) ShowError(ex.Message); }
     }
