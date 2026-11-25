@@ -12,6 +12,8 @@ sealed partial class InventoryWindow
     void InitializeLibrary()
     {
         InitializeQuickLook(inventoryTips);
+        searchDrives = LoadSelectedDrives();
+        if (searchDrives is not null) library.Text = $"Drives ({searchDrives.Count})";
         Disposed += (_, _) => inventoryTips.Dispose();
         Theme.AttachTooltip(library, inventoryTips, "Manage scanned drives, drive notes, and exports.");
         Theme.AttachTooltip(searchDrive, inventoryTips, "Limit search to the current drive.");
@@ -24,10 +26,39 @@ sealed partial class InventoryWindow
         library.Click += async (_, _) => await OpenDriveLibrary();
     }
 
+    HashSet<string>? LoadSelectedDrives()
+    {
+        try
+        {
+            string path = Path.Combine(catalog.DataDirectory, "selected_drives.json");
+            if (!File.Exists(path)) return null;
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path));
+            return list is { Count: > 0 } ? new HashSet<string>(list, StringComparer.Ordinal) : null;
+        }
+        catch { return null; }
+    }
+
+    void SaveSelectedDrives(HashSet<string>? selected)
+    {
+        try
+        {
+            string path = Path.Combine(catalog.DataDirectory, "selected_drives.json");
+            if (selected is null || selected.Count == 0)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+            Directory.CreateDirectory(catalog.DataDirectory);
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(selected.ToList()));
+        }
+        catch { }
+    }
+
     void ApplySearchDrives(HashSet<string>? selected)
     {
         searchDrives = selected;
-        library.Text = selected is null ? "Drive Library…" : $"Drive Library ({selected.Count} selected)…";
+        SaveSelectedDrives(selected);
+        library.Text = selected is null ? "Drives" : $"Drives ({selected.Count})";
         bool scopeChanged = ReloadBrowseScope();
         if (!restoring)
         {
