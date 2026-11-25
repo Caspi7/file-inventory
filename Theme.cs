@@ -235,7 +235,6 @@ static class Theme
     const int WM_THEMECHANGED = 0x031A;
     const int LVM_GETHEADER = 0x101F;
     const int DTM_GETMONTHCAL = 0x1008;
-    const int CB_GETCOMBOBOXINFO = 0x0164;
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -417,7 +416,6 @@ static class Theme
     static Palette current = LightPalette;
 
     internal static bool IsDark => isDark;
-    internal static Color CurrentBg => current.Bg;
     internal static Color CurrentSurface => current.Surface;
     internal static Color CurrentSurfaceAlt => current.SurfaceAlt;
     internal static Color CurrentSurfaceHover => current.SurfaceHover;
@@ -1368,22 +1366,13 @@ static class Theme
         return path;
     }
 
-    static void DrawChevronDown(Graphics g, float cx, float cy, float size, Color color)
+    static void DrawChevron(Graphics g, float cx, float cy, float size, Color color, bool up = false)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using var pen = new Pen(color, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
         float half = size * 0.5f;
-        float quarter = size * 0.25f;
+        float quarter = size * (up ? -0.25f : 0.25f);
         g.DrawLines(pen, [new PointF(cx - half, cy - quarter), new PointF(cx, cy + quarter), new PointF(cx + half, cy - quarter)]);
-    }
-
-    static void DrawChevronUp(Graphics g, float cx, float cy, float size, Color color)
-    {
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        using var pen = new Pen(color, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        float half = size * 0.5f;
-        float quarter = size * 0.25f;
-        g.DrawLines(pen, [new PointF(cx - half, cy + quarter), new PointF(cx, cy - quarter), new PointF(cx + half, cy + quarter)]);
     }
 
     static void DrawCheckmark(Graphics g, Rectangle rect, Color color)
@@ -1597,7 +1586,7 @@ static class Theme
             TextRenderer.DrawText(g, text, combo.Font, textRect, combo.Enabled ? p.Fg : p.DisabledFg,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            DrawChevronDown(g, combo.Width - 13f, combo.Height / 2f, 7f, combo.Enabled ? p.Muted : p.DisabledFg);
+            DrawChevron(g, combo.Width - 13f, combo.Height / 2f, 7f, combo.Enabled ? p.Muted : p.DisabledFg);
         }
 
         void PaintDropDownChrome()
@@ -1617,7 +1606,7 @@ static class Theme
                 using (var btnBrush = new SolidBrush(!combo.Enabled ? p.SurfaceDisabled : hovered ? p.SurfaceHover : p.Surface))
                     g.FillRectangle(btnBrush, buttonRect);
 
-                DrawChevronDown(g, buttonRect.X + buttonRect.Width / 2f, combo.Height / 2f, 7f,
+                DrawChevron(g, buttonRect.X + buttonRect.Width / 2f, combo.Height / 2f, 7f,
                     combo.Enabled ? p.Muted : p.DisabledFg);
 
                 var border = combo.Focused && combo.Enabled ? p.Accent : hovered ? p.BorderStrong : p.Border;
@@ -1735,7 +1724,7 @@ static class Theme
             TextRenderer.DrawText(g, picker.Text, picker.Font, textRect, textColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-            DrawChevronDown(g, picker.Width - 12f * scale, picker.Height / 2f, 6.5f * scale,
+            DrawChevron(g, picker.Width - 12f * scale, picker.Height / 2f, 6.5f * scale,
                 picker.Enabled ? p.Muted : p.DisabledFg);
         }
     }
@@ -1888,8 +1877,8 @@ static class Theme
             }
 
             float cx = buttons.Width / 2f;
-            DrawChevronUp(g, cx, mid / 2f + 0.5f, 5.5f, fg);
-            DrawChevronDown(g, cx, mid + (buttons.Height - mid) / 2f - 0.5f, 5.5f, fg);
+            DrawChevron(g, cx, mid / 2f + 0.5f, 5.5f, fg, up: true);
+            DrawChevron(g, cx, mid + (buttons.Height - mid) / 2f - 0.5f, 5.5f, fg);
         }
     }
 }
