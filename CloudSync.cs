@@ -128,7 +128,8 @@ static class CloudSync
 
         int exported = 0, imported = 0, skipped = 0;
         var errors = new List<string>();
-        string machinePrefix = SanitizeFilePart(Environment.MachineName);
+        string machineName = Environment.MachineName;
+        string machinePrefix = SanitizeFilePart(machineName);
         bool encrypt = !string.IsNullOrEmpty(config.Passphrase);
         string activeExt = encrypt ? EncryptedExtension : PlainExtension;
         string alternateExt = encrypt ? PlainExtension : EncryptedExtension;
@@ -141,7 +142,8 @@ static class CloudSync
         foreach (var volume in localVolumes)
         {
             token.ThrowIfCancellationRequested();
-            string baseName = $"{machinePrefix}__{SanitizeFilePart(volume.Id)}";
+            string baseName = SnapshotBaseName(machineName, volume);
+            string legacyBaseName = $"{machinePrefix}__{SanitizeFilePart(volume.Id)}";
             string targetPath = Path.Combine(config.Folder, baseName + activeExt);
             string alternatePath = Path.Combine(config.Folder, baseName + alternateExt);
             DateTime succeededUtc = DateTimeOffset.FromUnixTimeMilliseconds(volume.Succeeded!.Value).UtcDateTime;
@@ -175,9 +177,11 @@ static class CloudSync
 
                 if (File.Exists(alternatePath))
                     try { File.Delete(alternatePath); } catch (Exception) { }
-                string legacyPath = Path.Combine(config.Folder, baseName + LegacyPlainExtension);
-                if (File.Exists(legacyPath))
+                foreach (string extension in new[] { LegacyPlainExtension, PlainExtension, EncryptedExtension })
+                {
+                    string legacyPath = Path.Combine(config.Folder, legacyBaseName + extension);
                     try { File.Delete(legacyPath); } catch (Exception) { }
+                }
 
                 exported++;
             }
@@ -192,8 +196,12 @@ static class CloudSync
         var state = LoadState(catalog.DataDirectory);
         bool stateDirty = false;
         string ownPrefix = machinePrefix + "__";
+        string readableOwnPrefix = ReadableMachineName(machineName) + " - ";
         var localVolumeSanitizedIds = localVolumes
             .Select(v => SanitizeFilePart(v.Id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var localShortIds = localVolumes
+            .Select(v => SnapshotShortId(v.Id))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var existingVolumeIds = catalog.Volumes()
             .Select(v => v.Id)
@@ -210,21 +218,20 @@ static class CloudSync
         {
             token.ThrowIfCancellationRequested();
             string fileName = Path.GetFileName(filePath);
-            if (fileName.StartsWith(ownPrefix, StringComparison.OrdinalIgnoreCase))
+            string extension = fileName.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase)
+                ? EncryptedExtension
+                : fileName.EndsWith(LegacyPlainExtension, StringComparison.OrdinalIgnoreCase)
+                    ? LegacyPlainExtension : PlainExtension;
+            string stem = fileName[..^extension.Length];
+            bool ownLegacy = stem.StartsWith(ownPrefix, StringComparison.OrdinalIgnoreCase)
+                && localVolumeSanitizedIds.Contains(stem[ownPrefix.Length..]);
+            bool ownReadable = stem.StartsWith(readableOwnPrefix, StringComparison.OrdinalIgnoreCase)
+                && stem.Length >= readableOwnPrefix.Length + 8 && stem[^8] == '[' && stem[^1] == ']'
+                && localShortIds.Contains(stem[^7..^1]);
+            if (ownLegacy || ownReadable)
             {
-                string withoutPrefix = fileName[ownPrefix.Length..];
-                string stem = withoutPrefix.EndsWith(PlainExtension, StringComparison.OrdinalIgnoreCase)
-                    ? withoutPrefix[..^PlainExtension.Length]
-                    : withoutPrefix.EndsWith(LegacyPlainExtension, StringComparison.OrdinalIgnoreCase)
-                        ? withoutPrefix[..^LegacyPlainExtension.Length]
-                        : withoutPrefix.EndsWith(EncryptedExtension, StringComparison.OrdinalIgnoreCase)
-                            ? withoutPrefix[..^EncryptedExtension.Length]
-                            : Path.GetFileNameWithoutExtension(withoutPrefix);
-                if (localVolumeSanitizedIds.Contains(stem))
-                {
-                    skipped++;
-                    continue;
-                }
+                skipped++;
+                continue;
             }
 
             try
@@ -363,6 +370,46 @@ static class CloudSync
     static byte[] DeriveKey(string passphrase, ReadOnlySpan<byte> salt)
         => Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(passphrase), salt, Pbkdf2Iterations, HashAlgorithmName.SHA256, KeySize);
 
+    public static string SnapshotBaseName(string machineName, Volume volume)
+        => $"{SnapshotDisplayName(machineName, volume)} [{SnapshotShortId(volume.Id)}]";
+
+    public static string SnapshotDisplayName(string machineName, Volume volume)
+    {
+        string driveName = string.IsNullOrWhiteSpace(volume.Label)
+            || string.Equals(volume.Label, volume.Mount, StringComparison.OrdinalIgnoreCase)
+            ? "Drive" : SanitizeReadable(volume.Label, 150, "Drive");
+        string mount = volume.Mount;
+        string driveLetter = mount.Length >= 2 && mount[1] == ':' && char.IsAsciiLetter(mount[0])
+            ? $" ({char.ToUpperInvariant(mount[0])})" : "";
+        return $"{ReadableMachineName(machineName)} - {driveName}{driveLetter}";
+    }
+
+    static string ReadableMachineName(string machineName) => SanitizeReadable(machineName, 64, "PC");
+
+    static string SanitizeReadable(string value, int maxLength, string fallback)
+    {
+        char[] invalid = Path.GetInvalidFileNameChars();
+        string readable = new string(value.Select(c => invalid.Contains(c) ? '-' : c).ToArray()).Trim();
+        if (readable.Length > maxLength)
+        {
+            int length = char.IsHighSurrogate(readable[maxLength - 1]) ? maxLength - 1 : maxLength;
+            readable = readable[..length];
+        }
+        readable = readable.TrimEnd('.', ' ');
+        return readable.Length == 0 ? fallback : readable;
+    }
+
+    static string SnapshotShortId(string volumeId)
+    {
+        int guidStart = volumeId.IndexOf('{');
+        string identifier = guidStart >= 0 ? volumeId[(guidStart + 1)..]
+            : volumeId.StartsWith("serial:", StringComparison.OrdinalIgnoreCase) ? volumeId[7..]
+            : volumeId;
+        string shortId = new string(identifier.Where(char.IsAsciiLetterOrDigit).Take(6).ToArray());
+        return shortId.Length == 6 ? shortId
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(volumeId)))[..6];
+    }
+
     static string SanitizeFilePart(string value)
     {
         var sb = new StringBuilder(value.Length);
@@ -426,7 +473,7 @@ static class CloudSync
 
 sealed partial class InventoryWindow
 {
-    readonly Button syncButton = new() { Text = "Sync", AutoSize = true };
+    readonly Button syncButton = new() { Text = "☁ Sync", AutoSize = true };
     readonly Button syncSettingsButton = new() { Text = "Sync settings…", AutoSize = true };
     bool syncingCloud;
     CancellationTokenSource? syncCancellation;
@@ -695,7 +742,7 @@ sealed partial class InventoryWindow
             syncingCloud = false;
             if (!closing)
             {
-                syncButton.Text = "Sync";
+                syncButton.Text = "☁ Sync";
                 syncButton.Enabled = true;
                 syncSettingsButton.Enabled = true;
             }
