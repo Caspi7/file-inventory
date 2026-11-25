@@ -18,9 +18,10 @@ sealed class DeepSearchDialog : Form
     readonly ComboBox scanDrive = Selector("Scan drive", 175);
     readonly ComboBox resourceMode = Selector("Resource mode", 310);
     readonly CheckBox text = Option("Text & Code");
-    readonly CheckBox office = Option("Office (DOCX/XLSX/PPTX/ODT)");
+    readonly CheckBox office = Option("Office");
     readonly CheckBox pdf = Option("PDF");
-    readonly CheckBox snippets = Option("Store compressed snippets");
+    readonly CheckBox snippets = Option("Offline excerpts");
+    readonly CheckBox skipSystemFolders = Option("Skip system folders");
     readonly Label status = Line("Enter text to search the content index.");
     readonly Label estimate = Line("Estimating eligible files…");
     readonly Label progressText = Line("Ready to scan.");
@@ -93,7 +94,9 @@ sealed class DeepSearchDialog : Form
             AutoSize = true, Padding = new Padding(9) };
         var scanLayout = Stack();
         AddRow(scanLayout, Row(Line("Drive"), scanDrive, Line("Resource Mode"), resourceMode));
-        AddRow(scanLayout, Row(text, office, pdf, snippets));
+        var optionsRow = Row(text, office, pdf, snippets, skipSystemFolders);
+        optionsRow.WrapContents = true;
+        AddRow(scanLayout, optionsRow);
         AddRow(scanLayout, estimate);
         AddRow(scanLayout, Row(scan, cancel, progress));
         AddRow(scanLayout, progressText);
@@ -120,9 +123,10 @@ sealed class DeepSearchDialog : Form
             (reveal, "Select the matching file in Windows File Explorer."),
             (scanDrive, "Choose which online drives to index."),
             (text, "Index supported plain text and source code files."),
-            (office, "Index supported Microsoft Office and OpenDocument files."),
+            (office, "Index Microsoft Office (DOCX, XLSX, PPTX) and OpenDocument (ODT, ODS, ODP) files."),
             (pdf, "Index extractable text in PDF files."),
             (snippets, "Store Brotli-compressed text so search results can show excerpts, even offline."),
+            (skipSystemFolders, "Skip drive-root Windows, Program Files, ProgramData, Recycle Bin, and System Volume Information folders, plus nested dependency, Git, AppData cache, and build-output folders."),
             (resourceMode, "Choose how much CPU and disk activity the background content scan can use."),
             (estimate, "Estimates pending work and additional index size from the current scan options."),
             (scan, "Index new or changed content with the selected options."),
@@ -145,7 +149,7 @@ sealed class DeepSearchDialog : Form
         export.Click += async (_, _) => await RunAsync(ExportAsync, progressText);
         import.Click += async (_, _) => await RunAsync(ImportAsync, progressText);
         scanDrive.SelectedIndexChanged += (_, _) => QueueEstimate();
-        foreach (var option in new[] { text, office, pdf, snippets })
+        foreach (var option in new[] { text, office, pdf, snippets, skipSystemFolders })
             option.CheckedChanged += (_, _) => QueueEstimate();
         estimateTimer.Tick += async (_, _) => await RefreshEstimateAsync();
         Load += async (_, _) =>
@@ -170,7 +174,10 @@ sealed class DeepSearchDialog : Form
 
     static ComboBox Selector(string name, int width) => new()
     { AccessibleName = name, Width = width, DropDownWidth = Math.Max(380, width), DropDownStyle = ComboBoxStyle.DropDownList };
-    static CheckBox Option(string label) => new() { Text = label, AutoSize = true, Checked = true, UseMnemonic = false };
+    static CheckBox Option(string label) => new()
+    {
+        Text = label, AutoSize = true, Checked = true, UseMnemonic = false, Padding = new Padding(0, 0, 8, 0)
+    };
     static Label Line(string label) => new() { Text = label, AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left };
 
     static Button ActionButton(string label, FluentIcon icon)
@@ -206,7 +213,8 @@ sealed class DeepSearchDialog : Form
     ContentScanOptions ScanOptions() => new(
         VolumeIds: DriveId(scanDrive) is { } id ? [id] : null,
         Mode: (ContentScanMode)resourceMode.SelectedIndex, StoreSnippets: snippets.Checked,
-        IncludeText: text.Checked, IncludeOffice: office.Checked, IncludePdf: pdf.Checked);
+        IncludeText: text.Checked, IncludeOffice: office.Checked, IncludePdf: pdf.Checked,
+        SkipSystemFolders: skipSystemFolders.Checked);
 
     void QueueEstimate()
     {
@@ -245,6 +253,7 @@ sealed class DeepSearchDialog : Form
     {
         search.Enabled = scan.Enabled = sync.Enabled = export.Enabled = import.Enabled = !busy;
         scanDrive.Enabled = resourceMode.Enabled = text.Enabled = office.Enabled = pdf.Enabled = snippets.Enabled = !busy;
+        skipSystemFolders.Enabled = !busy;
         cancel.Enabled = scanCancellation is { IsCancellationRequested: false };
         copy.Enabled = SelectedHit is not null;
         reveal.Enabled = SelectedHit is { Online: true };
@@ -303,21 +312,27 @@ sealed class DeepSearchDialog : Form
 
     async Task ScanAsync()
     {
+        var watch = Stopwatch.StartNew();
         using var cancellation = new CancellationTokenSource();
         scanCancellation = cancellation;
         UpdateActions();
         progress.Value = 0;
         progress.Style = ProgressBarStyle.Marquee;
         progressText.Text = "Counting files to scan…";
-        var reporter = new Progress<ContentScanProgress>(value =>
+        var reporter = new Progress<ContentScanProgress>(p =>
         {
             if (scanCancellation != cancellation || cancellation.IsCancellationRequested) return;
+            var elapsed = watch.Elapsed;
+            double pct = p.Total > 0 ? Math.Clamp(p.Processed * 100.0 / p.Total, 0, 100) : 0;
+            string etaText = p.Total > 0 && elapsed.TotalSeconds >= 1.5 && p.Processed > 0
+                ? ScanDisplay.FormatTimeLeft(TimeSpan.FromSeconds(elapsed.TotalSeconds * Math.Max(0, p.Total - p.Processed) / p.Processed))
+                : "Estimating time remaining";
             progress.Style = ProgressBarStyle.Continuous;
-            progress.Value = value.Total <= 0 ? 0 : (int)Math.Clamp(value.Processed * 100.0 / value.Total, 0, 100);
-            progressText.Text = $"{value.Processed:N0} / {value.Total:N0} processed · {value.Indexed:N0} indexed · "
-                + $"{value.Skipped:N0} skipped · {value.Failed:N0} failed";
-            tips.SetToolTip(progressText, string.IsNullOrEmpty(value.CurrentFile)
-                ? "Shows how many files the scan has processed." : value.CurrentFile);
+            progress.Value = (int)pct;
+            progressText.Text = $"{pct:F1}% · {p.Processed:N0} / {p.Total:N0} · {etaText} · "
+                + $"{p.Indexed:N0} indexed · {p.Skipped:N0} skipped · {p.Failed:N0} failed";
+            tips.SetToolTip(progressText, string.IsNullOrEmpty(p.CurrentFile)
+                ? "Shows how many files the scan has processed." : p.CurrentFile);
         });
         try
         {
