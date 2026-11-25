@@ -39,7 +39,8 @@ sealed partial class InventoryWindow
 
     void InitializeBrowser()
     {
-        scope.Width = 260;
+        scope.Width = 280;
+        scope.DropDownWidth = 380;
         InitializeLibrary();
         InitializeSync();
         InitializeUpdates();
@@ -234,7 +235,7 @@ sealed partial class InventoryWindow
             }
             e.Item = CachedResult(e.ItemIndex) is { } hit
                 ? new ListViewItem([hit.Name, hit.IsDirectory ? "" : Path.GetExtension(hit.Name),
-                    hit.FullPath, hit.Label, hit.Status, hit.LastSeen.ToString(),
+                    hit.FullPath, FormatHitVolume(hit), hit.Status, hit.LastSeen.ToString(),
                     hit.IsDirectory ? "" : hit.Bytes.ToString("N0"), hit.Modified.ToString(), hit.Matched])
                 : new ListViewItem("Item no longer available");
         };
@@ -245,6 +246,10 @@ sealed partial class InventoryWindow
             await LocateCurrentHit();
         };
     }
+
+    string FormatHitVolume(Hit hit) => volumesById.TryGetValue(hit.Volume, out var volume)
+        ? volume.DisplayName
+        : hit.Label;
 
     void SelectScanVolume(string volume)
     {
@@ -282,7 +287,7 @@ sealed partial class InventoryWindow
         var selected = (scope.SelectedItem as Choice)?.Id;
         foreach (var volume in volumes.Where(v => selected is null || v.Id == selected))
         {
-            var root = MakeNode(volume.Id, "", $"{volume.Label} ({volume.Mount}){(volume.Online ? "" : " · Offline")}", true);
+            var root = MakeNode(volume.Id, "", volume.DisplayStatusLabel, true);
             root.ToolTipText = volume.Mount;
             tree.Nodes.Add(root);
         }
@@ -422,7 +427,7 @@ sealed partial class InventoryWindow
             {
                 var drive = volumes.FirstOrDefault(v => v.Id == hit.Volume);
                 if (drive is null) return;
-                root = MakeNode(drive.Id, "", $"{drive.Label} ({drive.Mount})", true);
+                root = MakeNode(drive.Id, "", drive.DisplayStatusLabel, true);
                 tree.Nodes.Add(root);
             }
             locating = true;
