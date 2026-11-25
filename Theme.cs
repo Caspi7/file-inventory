@@ -1,11 +1,13 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace FileInventory;
 
 enum AppTheme
 {
+    System,
     Light,
     Dark,
     DarkBlue
@@ -185,20 +187,36 @@ static class Theme
 
     static readonly string BodyFontFamily = ResolveFontFamily("Segoe UI Variable Text", "Segoe UI");
     static readonly string SemiboldFontFamily = ResolveFontFamily("Segoe UI Variable Text Semibold", BodyFontFamily);
+    static readonly string MonospaceFontFamily = ResolveFontFamily("Cascadia Mono", "Consolas");
 
     public static Font BodyFont { get; } = new(BodyFontFamily, 9.5f, FontStyle.Regular);
     public static Font SectionFont { get; } = SemiboldFontFamily == BodyFontFamily
         ? new(BodyFontFamily, 9.5f, FontStyle.Bold)
         : new(SemiboldFontFamily, 9.5f, FontStyle.Regular);
+    public static Font MonospaceFont { get; } = new(MonospaceFontFamily, 9f, FontStyle.Regular);
+    static readonly Font BoldBodyFont = new(BodyFontFamily, 9.5f, FontStyle.Bold);
 
     static readonly ConditionalWeakTable<Control, object> hooked = new();
     static readonly ConditionalWeakTable<Button, ButtonVisualState> buttonStates = new();
     static readonly ConditionalWeakTable<Control, List<NativeWindow>> nativeHooks = new();
+    static readonly ConditionalWeakTable<ListView, string[]> highlightTerms = new();
+    static readonly ConditionalWeakTable<ToolTip, object> hookedToolTips = new();
     static readonly List<WeakReference<ProgressBar>> marqueeBars = [];
     static System.Windows.Forms.Timer? marqueeTimer;
 
     static bool isDark;
     static Palette current = LightPalette;
+
+    internal static bool IsDark => isDark;
+    internal static Color CurrentBg => current.Bg;
+    internal static Color CurrentSurface => current.Surface;
+    internal static Color CurrentSurfaceAlt => current.SurfaceAlt;
+    internal static Color CurrentSurfaceHover => current.SurfaceHover;
+    internal static Color CurrentFg => current.Fg;
+    internal static Color CurrentMuted => current.Muted;
+    internal static Color CurrentBorder => current.Border;
+    internal static Color CurrentBorderStrong => current.BorderStrong;
+    internal static Color CurrentAccent => current.Accent;
 
     sealed class ButtonVisualState
     {
@@ -221,6 +239,22 @@ static class Theme
     public static void MarkSectionTitle(Label label) => label.Tag = "section-title";
     public static void MarkPrimaryLabel(Label label) => label.Tag = "primary-label";
 
+    public static AppTheme ResolveTheme(AppTheme theme)
+    {
+        if (theme != AppTheme.System)
+            return theme;
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("AppsUseLightTheme") is int value)
+                return value == 0 ? AppTheme.Dark : AppTheme.Light;
+        }
+        catch { }
+
+        return AppTheme.Light;
+    }
+
     public static AppTheme LoadPreference(string dataDirectory)
     {
         try
@@ -230,7 +264,7 @@ static class Theme
                 return saved;
         }
         catch { }
-        return AppTheme.Light;
+        return AppTheme.System;
     }
 
     public static void SavePreference(string dataDirectory, AppTheme theme)
@@ -247,6 +281,7 @@ static class Theme
 
     public static void Apply(Form form, AppTheme theme)
     {
+        theme = ResolveTheme(theme);
         bool dark = theme != AppTheme.Light;
         isDark = dark;
         current = theme switch
@@ -579,6 +614,68 @@ static class Theme
         marqueeTimer.Start();
     }
 
+    public static void SetHighlightTerms(ListView lv, IReadOnlyList<string>? terms)
+    {
+        string[] normalized = terms is null || terms.Count == 0
+            ? []
+            : terms
+                .Where(static t => !string.IsNullOrWhiteSpace(t))
+                .Select(static t => t.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(static t => t.Length)
+                .ToArray();
+
+        if (highlightTerms.TryGetValue(lv, out var existing)
+            && existing.Length == normalized.Length
+            && existing.SequenceEqual(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        highlightTerms.AddOrUpdate(lv, normalized);
+        if (lv.IsHandleCreated && !lv.IsDisposed)
+            lv.Invalidate();
+    }
+
+    public static void StyleToolTip(ToolTip tip)
+    {
+        tip.BackColor = current.SurfaceAlt;
+        tip.ForeColor = current.Fg;
+        tip.OwnerDraw = true;
+
+        if (!hookedToolTips.TryGetValue(tip, out _))
+        {
+            hookedToolTips.Add(tip, new object());
+            tip.Popup += (_, e) =>
+            {
+                var text = e.AssociatedControl is not null ? tip.GetToolTip(e.AssociatedControl) : "";
+                if (string.IsNullOrEmpty(text)) return;
+                var measured = TextRenderer.MeasureText(text, BodyFont, new Size(360, 0),
+                    TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                e.ToolTipSize = new Size(measured.Width + 16, measured.Height + 10);
+            };
+            tip.Draw += (_, e) =>
+            {
+                var p = current;
+                using var bg = new SolidBrush(p.SurfaceAlt);
+                using var border = new Pen(p.BorderStrong, 1f);
+                e.Graphics.FillRectangle(bg, e.Bounds);
+                e.Graphics.DrawRectangle(border, e.Bounds.X, e.Bounds.Y,
+                    Math.Max(0, e.Bounds.Width - 1), Math.Max(0, e.Bounds.Height - 1));
+                var textRect = new Rectangle(e.Bounds.X + 8, e.Bounds.Y + 5,
+                    Math.Max(0, e.Bounds.Width - 16), Math.Max(0, e.Bounds.Height - 10));
+                TextRenderer.DrawText(e.Graphics, e.ToolTipText ?? "", BodyFont, textRect, p.Fg,
+                    TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            };
+        }
+    }
+
+    public static void AttachTooltip(Control c, ToolTip tip, string text)
+    {
+        StyleToolTip(tip);
+        tip.SetToolTip(c, text);
+    }
+
     static void ApplyListView(ListView lv, bool dark)
     {
         lv.BackColor = current.Surface;
@@ -612,13 +709,154 @@ static class Theme
                 TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", SectionFont, textRect, current.Muted, flags);
             };
             lv.DrawItem += (_, e) => e.DrawDefault = true;
-            lv.DrawSubItem += (_, e) => e.DrawDefault = true;
+            lv.DrawSubItem += (_, e) => DrawListViewSubItem(lv, e);
 
             AttachNativeHook(lv, new DarkBorderHook(lv));
             AttachNativeHook(lv, new ListViewHeaderHook(lv));
         }
 
         lv.Invalidate(true);
+    }
+
+    static void DrawListViewSubItem(ListView lv, DrawListViewSubItemEventArgs e)
+    {
+        if (e.ColumnIndex != 0
+            || e.Item is null
+            || !highlightTerms.TryGetValue(lv, out var terms)
+            || terms.Length == 0)
+        {
+            e.DrawDefault = true;
+            return;
+        }
+
+        string text = e.SubItem?.Text ?? e.Item.Text;
+        if (string.IsNullOrEmpty(text))
+        {
+            e.DrawDefault = true;
+            return;
+        }
+
+        var spans = FindHighlightSpans(text, terms);
+        if (spans.Count == 0)
+        {
+            e.DrawDefault = true;
+            return;
+        }
+
+        var p = current;
+        bool selected = e.Item.Selected;
+        bool focused = lv.Focused;
+
+        Color rowBg = selected
+            ? (focused ? p.Accent : p.SurfaceHover)
+            : p.Surface;
+        Color textFg = selected && focused ? Color.White : p.Fg;
+        Color matchBg = selected && focused
+            ? Color.FromArgb(75, Color.White)
+            : Color.FromArgb(isDark ? 76 : 44, p.Accent);
+
+        using (var bgBrush = new SolidBrush(rowBg))
+            e.Graphics.FillRectangle(bgBrush, e.Bounds);
+
+        var normalFont = lv.Font ?? BodyFont;
+        Font? transientBold = null;
+        Font boldFont;
+        if (Equals(normalFont, BodyFont))
+            boldFont = BoldBodyFont;
+        else if (normalFont.Bold)
+            boldFont = normalFont;
+        else
+            boldFont = transientBold = new Font(normalFont, FontStyle.Bold);
+
+        var state = e.Graphics.Save();
+        try
+        {
+            var clipRect = new Rectangle(e.Bounds.X + 2, e.Bounds.Y, Math.Max(0, e.Bounds.Width - 4), e.Bounds.Height);
+            e.Graphics.SetClip(clipRect);
+
+            const TextFormatFlags measureFlags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+            const TextFormatFlags drawFlags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
+
+            int x = e.Bounds.X + 6;
+            int maxRight = e.Bounds.Right - 4;
+            int pos = 0;
+
+            using var matchBrush = new SolidBrush(matchBg);
+
+            foreach (var (start, end) in spans)
+            {
+                if (x >= maxRight) break;
+
+                if (start > pos)
+                {
+                    string prefix = text[pos..start];
+                    var size = TextRenderer.MeasureText(e.Graphics, prefix, normalFont, new Size(int.MaxValue, e.Bounds.Height), measureFlags);
+                    var segRect = new Rectangle(x, e.Bounds.Y, Math.Min(size.Width, maxRight - x), e.Bounds.Height);
+                    TextRenderer.DrawText(e.Graphics, prefix, normalFont, segRect, textFg, drawFlags);
+                    x += size.Width;
+                }
+
+                if (x >= maxRight) break;
+
+                string match = text[start..end];
+                var matchSize = TextRenderer.MeasureText(e.Graphics, match, boldFont, new Size(int.MaxValue, e.Bounds.Height), measureFlags);
+                int drawWidth = Math.Min(matchSize.Width, maxRight - x);
+
+                var pillRect = new RectangleF(x - 1f, e.Bounds.Y + 2f, Math.Max(1f, drawWidth + 2f), Math.Max(1f, e.Bounds.Height - 4f));
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var pillPath = CreateRoundedRect(pillRect, 2.5f))
+                    e.Graphics.FillPath(matchBrush, pillPath);
+
+                var matchRect = new Rectangle(x, e.Bounds.Y, drawWidth, e.Bounds.Height);
+                TextRenderer.DrawText(e.Graphics, match, boldFont, matchRect, textFg, drawFlags);
+                x += matchSize.Width;
+                pos = end;
+            }
+
+            if (pos < text.Length && x < maxRight)
+            {
+                string suffix = text[pos..];
+                var suffixRect = new Rectangle(x, e.Bounds.Y, maxRight - x, e.Bounds.Height);
+                TextRenderer.DrawText(e.Graphics, suffix, normalFont, suffixRect, textFg,
+                    drawFlags | TextFormatFlags.EndEllipsis);
+            }
+        }
+        finally
+        {
+            e.Graphics.Restore(state);
+            transientBold?.Dispose();
+        }
+    }
+
+    static List<(int Start, int End)> FindHighlightSpans(string text, string[] terms)
+    {
+        List<(int Start, int End)> raw = [];
+        foreach (var term in terms)
+        {
+            int idx = 0;
+            while (idx < text.Length)
+            {
+                int found = text.IndexOf(term, idx, StringComparison.OrdinalIgnoreCase);
+                if (found < 0) break;
+                raw.Add((found, found + term.Length));
+                idx = found + term.Length;
+            }
+        }
+
+        if (raw.Count <= 1) return raw;
+
+        raw.Sort(static (a, b) => a.Start != b.Start ? a.Start.CompareTo(b.Start) : b.End.CompareTo(a.End));
+        List<(int Start, int End)> merged = [raw[0]];
+        for (int i = 1; i < raw.Count; i++)
+        {
+            var prev = merged[^1];
+            var cur = raw[i];
+            if (cur.Start <= prev.End)
+                merged[^1] = (prev.Start, Math.Max(prev.End, cur.End));
+            else
+                merged.Add(cur);
+        }
+        return merged;
     }
 
     static void ApplyListViewNativeTheme(ListView lv, bool dark)
@@ -846,7 +1084,7 @@ static class Theme
         list.Add(hook);
     }
 
-    static GraphicsPath CreateRoundedRect(RectangleF rect, float radius)
+    internal static GraphicsPath CreateRoundedRect(RectangleF rect, float radius)
     {
         var path = new GraphicsPath();
         float d = Math.Min(radius * 2f, Math.Min(rect.Width, rect.Height));
