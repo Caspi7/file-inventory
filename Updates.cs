@@ -7,6 +7,10 @@ sealed partial class InventoryWindow
     readonly Button updateButton = new() { Text = "Check for updates", AutoSize = true };
     readonly Button releaseNotesButton = new() { Text = "Release notes", AutoSize = true };
     const string FullReleaseNotes = """
+        File Inventory 1.3.6
+        • Fixed SQLite Error 5 ('database is locked') during Cloud Sync by pausing background drive polling while syncing/importing and increasing SQLite busy_timeout to 30s.
+        • Sync button now stays clickable as "Cancel sync" while syncing instead of locking out.
+
         File Inventory 1.3.5
         • Matching custom Fluent vector icons unify the command bar, filters, dialog buttons, and More menu.
         • The storage visualization is now labeled Storage Map throughout the app.
