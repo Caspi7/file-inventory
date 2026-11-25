@@ -1,0 +1,153 @@
+import { LineEdit, ComboBox, CheckBox, ListView, ScrollView } from "std-widgets.slint";
+import { Action, Label, DataRow, Grid, Tile } from "controls.slint";
+import { Palette } from "theme.slint";
+
+export struct DriveChoice { title: string, checked: bool }
+
+export component DialogBody inherits VerticalLayout {
+    in property <string> mode;
+    in property <[DriveChoice]> choices;
+    in property <[DataRow]> rows;
+    in property <[DataRow]> details;
+    in property <[Tile]> tiles;
+    in property <[string]> drives;
+    in property <string> status;
+    in property <bool> busy;
+    in-out property <int> selection: -1;
+    in-out property <int> detail-selection: -1;
+    in-out property <int> map-drive: 0;
+    in-out property <int> format: 0;
+    in-out property <string> field;
+    in-out property <string> second;
+    in-out property <bool> flag;
+    in-out property <bool> second-flag;
+    callback action(string, int);
+    spacing: 8px;
+
+    if root.mode == "scope" : Action { label: "All drives"; clicked => { root.action("scope-all", 0); } }
+    if root.mode == "picker" || root.mode == "library" || root.mode == "scope" : ListView {
+        vertical-stretch: 1;
+        for drive[i] in root.choices : Rectangle {
+            height: 34px;
+            background: i == root.selection ? Palette.surface-hover : Palette.surface;
+            HorizontalLayout {
+                padding-left: 9px; spacing: 8px;
+                CheckBox { checked: drive.checked; toggled => { root.action("drive-toggle", i); } }
+                Action { label: drive.title; horizontal-stretch: 1; clicked => { root.selection = i; root.action("drive-select", i); } }
+            }
+        }
+    }
+    if root.mode == "picker" || root.mode == "scope" : HorizontalLayout {
+        spacing: 8px;
+        Action { label: "Select all"; clicked => { root.action("drive-all", 0); } }
+        Action { label: "Select none"; clicked => { root.action("drive-none", 0); } }
+        Rectangle { horizontal-stretch: 1; }
+        Action { label: root.mode == "picker" ? "Start scan" : "Apply scope"; primary: true; enabled: root.mode == "scope" || !root.busy; clicked => { root.action("drive-apply", 0); } }
+    }
+    if root.mode == "library" : VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit { placeholder-text: "Location note"; text <=> root.field; horizontal-stretch: 1; }
+            LineEdit { placeholder-text: "Freshness alert days"; text <=> root.second; width: 150px; }
+            Action { label: "Save details"; enabled: root.selection >= 0; clicked => { root.action("drive-save", 0); } }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Action { label: "Import…"; enabled: !root.busy; clicked => { root.action("drive-import", 0); } }
+            Action { label: "Export…"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-export", 0); } }
+            Action { label: "Remove offline drive"; enabled: root.selection >= 0 && !root.busy; clicked => { root.action("drive-remove", 0); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+    if root.mode == "duplicates" || root.mode == "changes" || root.mode == "copies" : Grid {
+        rows: root.rows; compact: true; vertical-stretch: 1; selection <=> root.selection;
+        headers: root.mode == "changes" ? { a: "Volume", b: "Outcome", c: "Scan time and changes", d: "Bytes delta" }
+            : root.mode == "copies" ? { a: "Filename", b: "Volume", c: "Full path", d: "Size" }
+            : { a: "Group", b: "Size", c: "SHA-256" };
+        selected(i) => { root.action("dialog-select", i); }
+    }
+    if root.mode == "duplicates" || root.mode == "changes" : Grid {
+        rows: root.details; compact: true; vertical-stretch: 1; selection <=> root.detail-selection;
+        headers: root.mode == "changes" ? { a: "Change", b: "Old bytes", c: "Path", d: "New bytes" } : { a: "Filename", b: "Volume", c: "Full path", d: "Status" };
+    }
+    if root.mode == "duplicates" || root.mode == "copies" : HorizontalLayout {
+        spacing: 8px;
+        if root.mode == "duplicates" : Action { label: "Find duplicates"; enabled: !root.busy; clicked => { root.action("duplicate-scan", 0); } }
+        if root.mode == "duplicates" : Action { label: "Verify SHA-256"; enabled: !root.busy && root.rows.length > 0; clicked => { root.action("duplicate-verify", 0); } }
+        Action { label: "Copy path"; clicked => { root.action("dialog-copy", 0); } }
+        Action { label: "Reveal in Explorer"; clicked => { root.action("dialog-reveal", 0); } }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if root.mode == "map" : VerticalLayout {
+        vertical-stretch: 1; spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            ComboBox { current-index <=> root.map-drive; model: root.drives; width: 200px; selected => { root.action("map-drive", 0); } }
+            Action { label: "Up"; clicked => { root.action("map-up", 0); } }
+            Label { text: root.field; horizontal-stretch: 1; }
+        }
+        canvas := Rectangle {
+            vertical-stretch: 1; background: Palette.surface-readonly; clip: true;
+            for tile[i] in root.tiles : Rectangle {
+                x: canvas.width * tile.x; y: canvas.height * tile.y;
+                width: canvas.width * tile.w; height: canvas.height * tile.h;
+                background: hit.has-hover ? tile.tint.brighter(25%) : tile.tint;
+                border-width: 1px; border-color: Palette.surface; clip: true;
+                Label { x: 6px; y: 4px; width: parent.width - 12px; height: 25px; text: tile.label; color: white; }
+                hit := TouchArea { clicked => { root.action("map-tile", i); } moved => { hover.text = tile.detail; } }
+            }
+        }
+        hover := Label { height: 24px; color: Palette.muted; }
+    }
+    if root.mode == "sync-settings" : VerticalLayout {
+        spacing: 8px;
+        Label { text: "Cloud sync folder"; height: 22px; }
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit { placeholder-text: "Folder"; text <=> root.field; horizontal-stretch: 1; }
+            Action { label: "Auto-detect cloud folders"; clicked => { root.action("sync-detect", 0); } }
+            Action { label: "Browse…"; clicked => { root.action("sync-browse", 0); } }
+        }
+        if root.drives.length > 0 : ComboBox { model: root.drives; selected => { root.action("sync-provider", self.current-index); } }
+        Label { text: "Optional AES-256-GCM passphrase"; height: 22px; }
+        LineEdit { input-type: password; text <=> root.second; }
+        CheckBox { text: "Include content index in sync"; checked <=> root.flag; }
+        CheckBox { text: "Automatically sync after a scan"; checked <=> root.second-flag; }
+        Action { label: "Save"; primary: true; clicked => { root.action("sync-save", 0); } }
+    }
+    if root.mode == "commands" || root.mode == "more" : VerticalLayout {
+        vertical-stretch: 1; spacing: 8px;
+        if root.mode == "commands" : LineEdit {
+            placeholder-text: "Search commands"; text <=> root.field;
+            edited => { root.action("command-filter", 0); }
+            accepted => { root.action("command-run", 0); }
+            init => { self.focus(); }
+        }
+        ListView {
+            for entry[i] in root.rows : Rectangle {
+                height: 36px;
+                Action { label: entry.a; width: parent.width; clicked => { root.action("command-run", i); } }
+            }
+        }
+    }
+    if root.mode == "about" : VerticalLayout {
+        vertical-stretch: 1; spacing: 8px;
+        ScrollView {
+            vertical-stretch: 1;
+            Text { text: root.field; color: Palette.fg; wrap: word-wrap; width: parent.width; }
+        }
+        Label { text: "Made with Slint"; color: Palette.muted; height: 26px; }
+        Action { label: "Check for updates"; enabled: !root.busy; clicked => { root.action("updates", 0); } }
+        if root.flag : Action { label: "Open release download"; clicked => { root.action("update-open", 0); } }
+    }
+    if root.mode == "save-search" || root.mode == "export" || root.mode == "remove" || root.mode == "import-password" : VerticalLayout {
+        spacing: 8px;
+        if root.mode == "save-search" : LineEdit { placeholder-text: "Search name"; text <=> root.field; }
+        if root.mode == "export" : ComboBox { model: ["HTML", "CSV", "JSON"]; current-index <=> root.format; }
+        if root.mode == "remove" : Label { text: root.field; height: 32px; }
+        if root.mode == "import-password" : LineEdit { placeholder-text: "Snapshot passphrase"; input-type: password; text <=> root.field; }
+        Action { label: root.mode == "export" ? "Choose destination…" : root.mode == "remove" ? "Remove drive" : root.mode == "import-password" ? "Import" : "Save"; primary: true; clicked => { root.action("dialog-confirm", 0); } }
+    }
+    if root.status != "" : Label { text: root.status; color: Palette.muted; height: 24px; }
+}
