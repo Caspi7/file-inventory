@@ -3,7 +3,7 @@ use std::{
     sync::{Arc,atomic::{AtomicBool,Ordering}}, time::{UNIX_EPOCH,Duration},
 };
 use file_inventory::{
-    catalog::{Catalog, SearchFilter, Volume, SavedSearch},
+    catalog::{Catalog, FileSort, FileSortColumn, SearchFilter, Volume, SavedSearch},
     content::{ContentIndex, ContentScanOptions, ContentSearchOptions, ContentMatchMode},
     duplicates::{find_duplicate_groups,verify_groups,DuplicateOptions},
     export::{self,InventoryExportFormat},
@@ -40,6 +40,39 @@ fn scan(catalog:&Catalog,volume:&Volume)->scanner::ScanOutcome {
 fn search(catalog:&Catalog,query:&str)->Vec<String> {
     catalog.search(&SearchFilter{query:query.into(),..Default::default()},500).unwrap()
         .into_iter().map(|row|row.rel).collect()
+}
+
+#[test]
+fn file_sort_applies_before_pagination_in_browse_and_search() {
+    let fixture = Fixture::new();
+    let catalog = fixture.catalog("catalog");
+    let volume = fixture.volume("drive");
+    let root = Path::new(&volume.mount);
+    fs::write(root.join("Match a.txt"), [0; 100]).unwrap();
+    fs::write(root.join("Match b.txt"), [0; 2]).unwrap();
+    fs::write(root.join("Match c.txt"), [0; 20]).unwrap();
+    scan(&catalog, &volume);
+
+    let filter = SearchFilter { query: "match".into(), ..Default::default() };
+    let columns = [FileSortColumn::Name, FileSortColumn::Extension, FileSortColumn::Path,
+        FileSortColumn::Volume, FileSortColumn::Status, FileSortColumn::Size, FileSortColumn::Modified];
+    for column in columns {
+        let sort = Some(FileSort { column, ascending: true });
+        let browse = catalog.browse_folder_page_sorted("drive", "", false, 0, 3, sort).unwrap();
+        for filter in [&filter, &SearchFilter::default()] {
+            let search = catalog.search_page_sorted(filter, 0, 3, sort).unwrap();
+            assert_eq!(search.iter().map(|f| f.id).collect::<Vec<_>>(),
+                browse.iter().map(|f| f.id).collect::<Vec<_>>(), "{column:?}");
+        }
+    }
+
+    for (ascending, expected) in [(true, [2, 20, 100]), (false, [100, 20, 2])] {
+        let sort = Some(FileSort { column: FileSortColumn::Size, ascending });
+        for (offset, size) in expected.into_iter().enumerate() {
+            assert_eq!(catalog.search_page_sorted(&filter, offset, 1, sort).unwrap()[0].bytes, size);
+            assert_eq!(catalog.browse_folder_page_sorted("drive", "", false, offset, 1, sort).unwrap()[0].bytes, size);
+        }
+    }
 }
 
 #[test]
@@ -166,7 +199,7 @@ fn content_formats_boolean_fuzzy_ranking_and_ficontent() {
     let volume=fixture.volume("drive");
     let root=Path::new(&volume.mount);
     fs::write(root.join("statement.txt"),format!("{} invoice receipt alpha core quarterly ledger","filler ".repeat(100))).unwrap();
-    fs::write(root.join("simple.txt"),"beta core archive quarterly").unwrap();
+    fs::write(root.join("simple.txt"),"beta\r\n  core\tarchive   quarterly").unwrap();
     fs::write(root.join("excluded.txt"),"alpha core excluded").unwrap();
     fs::write(root.join("wrong.txt"),"alpha unrelated").unwrap();
     fs::create_dir(root.join("Windows")).unwrap();
@@ -198,6 +231,7 @@ fn content_formats_boolean_fuzzy_ranking_and_ficontent() {
         ("heliosphere quasar","science.pdf"),
     ] {assert_eq!(query(term,&strict).hits[0].name,name);}
     assert!(query("sentinel",&strict).hits.is_empty());
+    assert_eq!(query("beta",&strict).hits[0].snippet, "beta core archive quarterly");
     let hits=query("(alpha OR beta) AND core -excluded",&strict).hits;
     let mut names=hits.iter().map(|hit|hit.name.as_str()).collect::<Vec<_>>();
     names.sort_unstable();
