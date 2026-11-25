@@ -1,10 +1,13 @@
-﻿use std::time::Duration;
+use std::time::Duration;
 use semver::Version;
 use serde::Deserialize;
 use crate::EngineResult;
 
-pub const APP_VERSION:&str="1.5.1";
-pub const FULL_RELEASE_NOTES:&str="File Inventory 1.5.1
+pub const APP_VERSION:&str="1.5.2";
+pub const FULL_RELEASE_NOTES:&str="File Inventory 1.5.2
+- Restored gold folder icons and added semantic colors for drives, file types, statuses, and actions across all themes.
+
+File Inventory 1.5.1
 Local and imported drives are grouped by host. File tables have aligned, sortable columns, and Deep Search refreshes when options change.
 
 File Inventory 1.5.0
