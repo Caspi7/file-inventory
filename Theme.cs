@@ -13,8 +13,217 @@ enum AppTheme
     DarkBlue
 }
 
+enum FluentIcon
+{
+    None, Scan, Cancel, Sync, Settings, Drives, Duplicates, History, StorageMap,
+    ThemeSystem, ThemeLight, ThemeDark, ThemeBlue, More, Copy, FolderOpen, Search,
+    Star, Bookmark, Save, Export, Import, Up, Update, Notes, Check
+}
+
 static class Theme
 {
+    const int IconSize = 14;
+    const int IconGap = 6;
+    const int IconButtonInset = 8;
+    static readonly ConditionalWeakTable<Button, StrongBox<FluentIcon>> buttonIcons = new();
+
+    public static void SetIcon(Button button, FluentIcon icon)
+    {
+        buttonIcons.GetOrCreateValue(button).Value = icon;
+        UpdateButtonPadding(button);
+        button.Invalidate();
+    }
+
+    static FluentIcon GetIcon(Button button) =>
+        buttonIcons.TryGetValue(button, out var icon) ? icon.Value : FluentIcon.None;
+
+    static void UpdateButtonPadding(Button button)
+    {
+        int inset = GetIcon(button) == FluentIcon.None ? 12 : IconButtonInset;
+        int iconWidth = GetIcon(button) == FluentIcon.None ? 0
+            : IconSize + (button.Text.Length == 0 ? 0 : IconGap);
+        button.Padding = new Padding(inset + iconWidth, 4, inset, 4);
+        int minWidth = button.Text.Length == 0 ? 2 * inset + iconWidth : 0;
+        if (button.MinimumSize.Width < minWidth || button.MinimumSize.Height < 30)
+            button.MinimumSize = new Size(Math.Max(button.MinimumSize.Width, minWidth), 30);
+    }
+
+    public static Bitmap CreateMenuIcon(FluentIcon icon, Color color)
+    {
+        var bitmap = new Bitmap(16, 16);
+        using var graphics = Graphics.FromImage(bitmap);
+        PaintIcon(graphics, icon, color, 1, 1);
+        return bitmap;
+    }
+
+    public static void SetMenuIcon(ContextMenuStrip menu, ToolStripMenuItem item, FluentIcon icon)
+    {
+        Bitmap? image = null;
+        Color color = Color.Empty;
+        item.ImageScaling = ToolStripItemImageScaling.None;
+        menu.Opening += (_, _) =>
+        {
+            var foreground = item.Enabled ? item.ForeColor : SystemColors.GrayText;
+            if (image is not null && foreground == color) return;
+            var previous = image;
+            color = foreground;
+            item.Image = image = CreateMenuIcon(icon, color);
+            previous?.Dispose();
+        };
+        item.Disposed += (_, _) => image?.Dispose();
+    }
+
+    static void PaintIcon(Graphics graphics, FluentIcon icon, Color color, float x, float y)
+    {
+        var state = graphics.Save();
+        graphics.TranslateTransform(x, y);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(color, 1.4f)
+        {
+            StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round
+        };
+
+        void Line(float x1, float y1, float x2, float y2) => graphics.DrawLine(pen, x1, y1, x2, y2);
+        void Path(params PointF[] points) => graphics.DrawLines(pen, points);
+        void Outline(params PointF[] points) => graphics.DrawPolygon(pen, points);
+        void Box(float left, float top, float width, float height) => graphics.DrawRectangle(pen, left, top, width, height);
+        void Circle(float left, float top, float size) => graphics.DrawEllipse(pen, left, top, size, size);
+        void Arc(float left, float top, float size, float start, float sweep) =>
+            graphics.DrawArc(pen, left, top, size, size, start, sweep);
+
+        switch (icon)
+        {
+            case FluentIcon.Scan:
+                Path(new(1, 4), new(1, 1), new(4, 1));
+                Path(new(10, 1), new(13, 1), new(13, 4));
+                Path(new(13, 10), new(13, 13), new(10, 13));
+                Path(new(4, 13), new(1, 13), new(1, 10));
+                Line(3, 7, 11, 7);
+                break;
+            case FluentIcon.Cancel:
+                Line(3, 3, 11, 11);
+                Line(11, 3, 3, 11);
+                break;
+            case FluentIcon.Sync:
+                Arc(2, 2, 10, 195, 145);
+                Arc(2, 2, 10, 15, 145);
+                Path(new(12, 1), new(12, 5), new(8, 5));
+                Path(new(2, 13), new(2, 9), new(6, 9));
+                break;
+            case FluentIcon.Settings:
+                Outline(new(5.5f, 1), new(8.5f, 1), new(9, 3), new(11, 3.2f),
+                    new(12.8f, 5.5f), new(11.5f, 7), new(12.8f, 8.5f), new(11, 10.8f),
+                    new(9, 11), new(8.5f, 13), new(5.5f, 13), new(5, 11), new(3, 10.8f),
+                    new(1.2f, 8.5f), new(2.5f, 7), new(1.2f, 5.5f), new(3, 3.2f), new(5, 3));
+                Circle(5, 5, 4);
+                break;
+            case FluentIcon.Drives:
+                Outline(new(1, 8), new(3, 3), new(11, 3), new(13, 8), new(13, 12), new(1, 12));
+                Line(1, 8, 13, 8);
+                Line(10, 10, 11, 10);
+                break;
+            case FluentIcon.Duplicates:
+            case FluentIcon.Copy:
+                Path(new(1, 9), new(1, 1), new(9, 1));
+                Box(4, 4, 9, 9);
+                if (icon == FluentIcon.Duplicates)
+                {
+                    Line(7, 7, 10, 7);
+                    Line(7, 10, 10, 10);
+                }
+                break;
+            case FluentIcon.History:
+                Arc(1.5f, 1.5f, 11, 215, 315);
+                Path(new(1, 1), new(1, 5), new(5, 5));
+                Path(new(7, 4), new(7, 7), new(9, 9));
+                break;
+            case FluentIcon.StorageMap:
+                Box(1, 1, 12, 12);
+                Line(8, 1, 8, 13);
+                Line(8, 6, 13, 6);
+                Line(1, 9, 8, 9);
+                break;
+            case FluentIcon.ThemeSystem:
+                Circle(1, 1, 12);
+                Line(7, 1, 7, 13);
+                break;
+            case FluentIcon.ThemeLight:
+                Circle(4.5f, 4.5f, 5);
+                Line(7, 1, 7, 2);
+                Line(7, 12, 7, 13);
+                Line(1, 7, 2, 7);
+                Line(12, 7, 13, 7);
+                Line(2.7f, 2.7f, 3.5f, 3.5f);
+                Line(10.5f, 10.5f, 11.3f, 11.3f);
+                Line(2.7f, 11.3f, 3.5f, 10.5f);
+                Line(10.5f, 3.5f, 11.3f, 2.7f);
+                break;
+            case FluentIcon.ThemeDark:
+            case FluentIcon.ThemeBlue:
+                using (var moon = new GraphicsPath())
+                {
+                    moon.AddBezier(7, 1, 0, 1, -0.6f, 12.5f, 6.5f, 13);
+                    moon.AddBezier(6.5f, 13, 9.5f, 13, 11.5f, 11.5f, 12, 9.5f);
+                    moon.AddBezier(12, 9.5f, 7.5f, 10.5f, 4.5f, 5, 7, 1);
+                    moon.CloseFigure();
+                    graphics.DrawPath(pen, moon);
+                }
+                if (icon == FluentIcon.ThemeBlue)
+                {
+                    Line(11, 2, 11, 6);
+                    Line(9, 4, 13, 4);
+                }
+                break;
+            case FluentIcon.More:
+                using (var brush = new SolidBrush(color))
+                    for (int dot = 2; dot <= 12; dot += 5)
+                        graphics.FillEllipse(brush, dot - 1, 6, 2, 2);
+                break;
+            case FluentIcon.FolderOpen:
+                Outline(new(1, 12), new(1, 3), new(5, 3), new(6.5f, 5), new(11, 5),
+                    new(11, 7), new(13, 7), new(11, 12));
+                Path(new(1, 12), new(3, 7), new(11, 7));
+                break;
+            case FluentIcon.Search:
+                Circle(1, 1, 8.5f);
+                Line(8.5f, 8.5f, 13, 13);
+                break;
+            case FluentIcon.Star:
+                Outline(new(7, 1), new(8.8f, 5), new(13, 5.5f), new(9.8f, 8.4f),
+                    new(10.8f, 13), new(7, 10.5f), new(3.2f, 13), new(4.2f, 8.4f),
+                    new(1, 5.5f), new(5.2f, 5));
+                break;
+            case FluentIcon.Bookmark:
+                Outline(new(3, 1), new(11, 1), new(11, 13), new(7, 10), new(3, 13));
+                break;
+            case FluentIcon.Save:
+                Outline(new(1, 1), new(10, 1), new(13, 4), new(13, 13), new(1, 13));
+                Path(new(4, 1), new(4, 5), new(9, 5), new(9, 1));
+                Path(new(4, 13), new(4, 9), new(10, 9), new(10, 13));
+                break;
+            case FluentIcon.Export:
+            case FluentIcon.Import:
+            case FluentIcon.Update:
+            case FluentIcon.Up:
+                bool down = icon is FluentIcon.Import or FluentIcon.Update;
+                Line(7, 1, 7, icon == FluentIcon.Up ? 13 : 9);
+                if (down) Path(new(4, 6), new(7, 9), new(10, 6));
+                else Path(new(3, 5), new(7, 1), new(11, 5));
+                if (icon != FluentIcon.Up)
+                    Path(new(1, 9), new(1, 13), new(13, 13), new(13, 9));
+                break;
+            case FluentIcon.Notes:
+                Outline(new(2, 1), new(9, 1), new(12, 4), new(12, 13), new(2, 13));
+                Path(new(9, 1), new(9, 4), new(12, 4));
+                Line(5, 7, 9, 7);
+                Line(5, 10, 9, 10);
+                break;
+            case FluentIcon.Check:
+                Path(new(2, 7), new(5.5f, 10.5f), new(12, 3.5f));
+                break;
+        }
+        graphics.Restore(state);
+    }
     const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     const int DWMWA_BORDER_COLOR = 34;
     const int DWMWA_CAPTION_COLOR = 35;
@@ -420,7 +629,7 @@ static class Theme
     static bool IsPrimaryButton(Button b) =>
         b.Text.StartsWith("Scan ", StringComparison.Ordinal)
         || b.Text.StartsWith("Accept", StringComparison.Ordinal)
-        || string.Equals(b.Text, "Apply", StringComparison.Ordinal);
+        || b.Text is "Apply" or "Sync Now" or "Find Duplicates";
 
     static void ApplyButton(Button b, bool dark)
     {
@@ -434,9 +643,7 @@ static class Theme
         b.FlatAppearance.MouseDownBackColor = Color.Transparent;
         b.BackColor = b.Parent?.BackColor ?? current.Bg;
         b.ForeColor = IsPrimaryButton(b) ? Color.White : current.Fg;
-        b.Padding = new Padding(12, 4, 12, 4);
-        if (b.MinimumSize.Height < 30)
-            b.MinimumSize = new Size(b.MinimumSize.Width, 30);
+        UpdateButtonPadding(b);
 
         if (!hooked.TryGetValue(b, out _))
         {
@@ -450,7 +657,11 @@ static class Theme
             b.GotFocus += (_, _) => b.Invalidate();
             b.LostFocus += (_, _) => b.Invalidate();
             b.EnabledChanged += (_, _) => b.Invalidate();
-            b.TextChanged += (_, _) => b.Invalidate();
+            b.TextChanged += (_, _) =>
+            {
+                if (GetIcon(b) != FluentIcon.None) UpdateButtonPadding(b);
+                b.Invalidate();
+            };
 
             b.Paint += (_, e) => PaintFluentButton(b, state, e.Graphics);
         }
@@ -468,7 +679,7 @@ static class Theme
         {
             fill = primary ? p.AccentDisabledBg : p.SurfaceDisabled;
             border = primary ? p.AccentDisabledBg : p.Border;
-            text = primary ? p.AccentDisabledFg : p.DisabledFg;
+            text = p.DisabledFg;
         }
         else if (primary)
         {
@@ -504,6 +715,25 @@ static class Theme
         }
 
         var textRect = new Rectangle(6, 0, Math.Max(0, b.Width - 12), b.Height);
+        var icon = GetIcon(b);
+        if (icon != FluentIcon.None)
+        {
+            if (b.Text.Length == 0)
+            {
+                PaintIcon(g, icon, text, (b.Width - IconSize) / 2f, (b.Height - IconSize) / 2f);
+                return;
+            }
+
+            var flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            int labelWidth = TextRenderer.MeasureText(g, b.Text, b.Font, Size.Empty, flags).Width;
+            int contentWidth = Math.Min(labelWidth + IconSize + IconGap, Math.Max(0, b.Width - 2 * IconButtonInset));
+            int left = (b.Width - contentWidth) / 2;
+            PaintIcon(g, icon, text, left, (b.Height - IconSize) / 2f);
+            textRect = new Rectangle(left + IconSize + IconGap, 0, Math.Max(0, contentWidth - IconSize - IconGap), b.Height);
+            TextRenderer.DrawText(g, b.Text, b.Font, textRect, text,
+                flags | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            return;
+        }
         TextRenderer.DrawText(g, b.Text, b.Font, textRect, text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
