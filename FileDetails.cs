@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 
 namespace FileInventory;
@@ -303,8 +302,7 @@ sealed partial class InventoryWindow
         if (benchmark || volume is not { Online: true }) return false;
         bool available = await Task.Run(() => WindowsVolumes.CanReveal(volume, relative, fullPath));
         if (!available || closing || stillRequested?.Invoke() == false) return false;
-        using var explorer = Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{fullPath}\"")
-            { UseShellExecute = true });
+        UiHelpers.RevealInExplorer(fullPath);
         return true;
     }
 }
