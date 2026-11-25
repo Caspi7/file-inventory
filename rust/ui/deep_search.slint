@@ -25,19 +25,22 @@ export component DeepSearch inherits VerticalLayout {
     in-out property <bool> skip-system: true;
     in-out property <int> selection: -1;
     property <bool> tips;
+    in property <int> sort-column: -1;
+    in property <bool> sort-ascending: true;
+    callback sort(int);
     callback action(string);
     spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
         LineEdit { placeholder-text: "Search inside files… e.g. (invoice OR receipt) 2025 -draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
-        ComboBox { model: root.drives; current-index <=> root.drive; width: 155px; }
+        ComboBox { model: root.drives; current-index <=> root.drive; width: 220px; selected => { root.action("deep-search"); } }
         LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 100px; }
         Action { label: "Search"; primary: true; clicked => { root.action("deep-search"); } }
     }
     HorizontalLayout {
         spacing: 6px;
-        ComboBox { model: ["Smart (Boolean + Close)", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]; current-index <=> root.match-mode; width: 190px; }
-        CheckBox { text: "Typo-tolerant"; checked <=> root.fuzzy; }
+        ComboBox { model: ["Smart (Boolean + Close)", "All keywords (AND)", "Any keyword (OR)", "Exact phrase"]; current-index <=> root.match-mode; width: 190px; selected => { root.action("deep-search"); } }
+        CheckBox { text: "Typo-tolerant"; checked <=> root.fuzzy; toggled => { root.action("deep-search"); } }
         for helper in ["+ AND", "+ OR", "+ Exclude", "\"Phrase\"", "(Group)", "? Tips"] : Action {
             label: helper;
             clicked => {
@@ -61,8 +64,10 @@ export component DeepSearch inherits VerticalLayout {
         }
     }
     Grid {
-        vertical-stretch: 1; compact: true; rows: root.rows; selection <=> root.selection;
+        vertical-stretch: 1; column-mode: "deep"; rows: root.rows; selection <=> root.selection;
         headers: { a: "Filename", b: "Drive", c: "Excerpt", d: "Size", e: "Modified" };
+        sort-column: root.sort-column; sort-ascending: root.sort-ascending;
+        sort(i) => { root.sort(i); }
         activated(i) => { root.action("deep-reveal"); }
     }
     HorizontalLayout {
