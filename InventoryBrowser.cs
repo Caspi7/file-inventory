@@ -8,8 +8,8 @@ sealed partial class InventoryWindow
     readonly Label location = new() { AutoSize = true, Padding = new Padding(6),
         MaximumSize = new Size(1200, 0) };
     readonly Button browse = new() { Text = "Browse selected folder", AutoSize = true };
-    readonly Button themeButton = new() { Text = "Dark mode", AutoSize = true };
-    bool darkMode;
+    readonly Button themeButton = new() { Text = "Theme: Light", AutoSize = true };
+    AppTheme currentTheme = AppTheme.Light;
     readonly Dictionary<int, List<Hit>> pageCache = new();
     readonly Dictionary<int, Task> pendingPages = new();
     readonly SemaphoreSlim pageGate = new(2);
@@ -56,13 +56,31 @@ sealed partial class InventoryWindow
         toolbar.Controls.AddRange([LabelFor("Browse drive"), scope, refresh, cancel, browse, library, searchDrive, updateButton, releaseNotesButton, themeButton]);
         foreach (Control item in toolbar.Controls)
             item.Margin = item is Label ? new Padding(2, 8, 6, 2) : new Padding(0, 2, 6, 2);
+        currentTheme = Theme.LoadPreference(catalog.DataDirectory);
+        themeButton.Text = currentTheme switch
+        {
+            AppTheme.Dark => "Theme: Dark",
+            AppTheme.DarkBlue => "Theme: Dark Blue",
+            _ => "Theme: Light"
+        };
         themeButton.Click += (_, _) =>
         {
-            darkMode = !darkMode;
-            themeButton.Text = darkMode ? "Light mode" : "Dark mode";
-            Theme.Apply(this, darkMode);
+            currentTheme = currentTheme switch
+            {
+                AppTheme.Light => AppTheme.Dark,
+                AppTheme.Dark => AppTheme.DarkBlue,
+                _ => AppTheme.Light
+            };
+            themeButton.Text = currentTheme switch
+            {
+                AppTheme.Dark => "Theme: Dark",
+                AppTheme.DarkBlue => "Theme: Dark Blue",
+                _ => "Theme: Light"
+            };
+            Theme.SavePreference(catalog.DataDirectory, currentTheme);
+            Theme.Apply(this, currentTheme);
         };
-        Load += (_, _) => Theme.Apply(this, darkMode);
+        Load += (_, _) => Theme.Apply(this, currentTheme);
         var scanLine = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2,
             RowCount = 1, Padding = new Padding(12, 2, 12, 4) };
