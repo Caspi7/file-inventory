@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     fs::{self, File, FileTimes},
     io::Write,
     path::{Path, PathBuf},
@@ -305,7 +305,7 @@ fn model2vec_surfaces_a_document_with_zero_lexical_overlap() {
     backfill_vectors(&fixture, 2);
     let result = fixture.search("purchase");
     assert_eq!(names(&result), ["match.txt"]);
-    assert_eq!(result.hits[0].match_reason, "Semantic");
+    assert_eq!(result.hits[0].match_reason, "Concept");
     assert!(result.fuzzy_corrections.is_empty());
 }
 
@@ -334,8 +334,8 @@ fn hybrid_search_latency_on_2000_documents() {
     assert!(cold.fuzzy_corrections.iter().any(|correction| correction.ends_with("invoic*")), "{:?}", cold.fuzzy_corrections);
     assert!(cold.hits.iter().any(|hit| hit.name.starts_with("record-") && hit.match_reason == "Fuzzy"));
     assert!(cold.hits.iter().any(|hit| hit.name == "invoice.txt"));
-    assert!(cold.hits.iter().any(|hit| hit.name == "semantic.txt" && hit.match_reason == "Semantic"));
-    assert_eq!(fixture.search("purchase").hits[0].match_reason, "Semantic");
+    assert!(cold.hits.iter().any(|hit| hit.name == "semantic.txt" && hit.match_reason == "Concept"));
+    assert_eq!(fixture.search("purchase").hits[0].match_reason, "Concept");
 
     println!("hybrid {DOCUMENTS} docs, cold typo: {:.2} ms", cold_elapsed.as_secs_f64() * 1_000.0);
     for query in ["invoce", "invoice", "purchase"] {
