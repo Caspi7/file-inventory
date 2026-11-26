@@ -16,23 +16,29 @@ pub(crate) const SECTIONS: &[Section] = &[
     },
     Section {
         title: "Search & Filters",
-        subtitle: "Find files by name, metadata, or tag",
-        body: "Type in the main search field to instantly filter filenames and folders. Use ext:pdf for PDFs, size:>10mb for large files, modified:7d for recent changes, or tag:work for tagged items. Combine filters with keywords.
+        subtitle: "Find files by path, filename, metadata, or tag",
+        body: "Type in the main search field to instantly filter across both folder paths and filenames together. For example, typing 2024 taxes pdf matches Taxes\\2024\\return.pdf even when the year and folder topic are in parent folders rather than the filename itself.
 
-Use the status filter to show online, offline, or removed items. Click a column header to sort and click it again to reverse the order.
+Use ext:pdf for PDFs, size:>10mb for large files, modified:7d for recent changes, or tag:work for tagged items. Combine filters freely with keywords.
 
-Use ★ Saved Searches to save and reopen a search. Select a file to edit its Tags & Notes inline.",
+Use the status filter to show online, offline, or removed items. Click any column header to sort and click it again to reverse the order.
+
+Use ★ Saved Searches to save and reopen frequent queries. Select any file to edit its Tags & Notes inline.",
     },
     Section {
         title: "Deep Search",
-        subtitle: "Search inside documents and code",
+        subtitle: "Search inside documents by keywords, filters, or meaning",
         body: "Run a content scan to index TXT and code files, Office documents (DOCX, XLSX, PPTX, ODT), and PDFs.
 
-Smart Search takes plain keywords or a short description. Try invoice 2025 without draft to exclude drafts, or invoice/receipt 2025 to look for either document type. With Typo-tolerant enabled, it can match invoce to invoice. Files covering more of your keywords rank first, followed by close matches.
+Smart Search understands natural-language filters in English and Dutch — try large pdf invoice from last month without draft or grote excel vorige maand. Inferred filters appear as clickable Active Filter chips (such as Type: PDF ×, Modified: Last 30d ×, or Size: > 10 MB ×); click any chip to remove that filter and immediately broaden your search.
 
-Use AND, OR, NOT, -exclude, \"exact phrase\", or (group) for more control.
+Every result displays a sortable Match badge explaining why it matched: Exact (green) for direct text hits, Fuzzy or Close (amber) for typo-tolerant SymSpell or synonym matches, Filename or Facet (blue) for name and metadata matches, and Semantic (violet) for conceptual AI matches. Excerpts highlight matched terms directly with «word» markers.
 
-Choose Eco, Balanced, or Turbo to control scanning resource use. Enable Skip system folders to leave out common system and build folders. The scan shows percentage complete and an estimated time remaining.",
+Use AND, OR, NOT, -exclude, \"exact phrase\", or (group) when you want strict Boolean control.
+
+In the Semantic AI bar at the bottom of Deep Search, you can optionally download a local AI pack in one click — English AI (~30 MB) or Multilingual EN + NL AI (~128 MB). Once installed, File Inventory vectorizes indexed documents locally so you can find relevant files by meaning even when zero exact words overlap.
+
+Choose Eco, Balanced, or Turbo to control scanning resource use, and enable Skip system folders to ignore common system and build directories.",
     },
     Section {
         title: "Drives & Cloud Sync",
