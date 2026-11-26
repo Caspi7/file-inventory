@@ -13,8 +13,13 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.3";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.3
+pub const APP_VERSION: &str = "1.6.4";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.4
+- Drive removal updates the browser immediately and keeps the current dialog state.
+- Modal headers use a single close button.
+- The Help & User Guide is organized into short cards.
+
+File Inventory 1.6.3
 - Fixed Linguistic Search dropdown stretching vertically and Cancel button stretching horizontally in Deep Search.
 - Fixed Release Notes and User Guide scrolling (explicit ScrollView viewport-height bindings).
 
