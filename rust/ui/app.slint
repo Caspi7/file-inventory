@@ -1,13 +1,13 @@
 import { LineEdit, ComboBox, CheckBox, ListView, Palette as WidgetPalette } from "std-widgets.slint";
 import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile, ItemIcon, UiChip } from "controls.slint";
 import { DeepSearch } from "deep_search.slint";
-import { Guide, GuideSection } from "guide.slint";
+import { Guide, GuideCard, GuideSection } from "guide.slint";
 import { DialogBody, DriveChoice } from "dialogs.slint";
 import { Palette, ThemeMode } from "theme.slint";
-export { Palette, ThemeMode, UiChip }
+export { GuideCard, Palette, ThemeMode, UiChip }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.6.3";
+    title: "File Inventory 1.6.4";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -244,11 +244,7 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 8px;
                         Label { text: root.dialog-title; font-size: 21px; font-weight: 650; horizontal-stretch: 1; }
-                        if root.busy && root.overlay != "deep" && root.overlay != "scope" && root.overlay != "more"
-                            && !(root.overlay == "about" && root.update-installing) : Action {
-                            label: "Cancel operation"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("cancel", 0); }
-                        }
-                        Action { label: ""; icon: "M4 4L12 12 M12 4L4 12"; width: 28px; height: 28px; horizontal-padding: 7px; tone: "danger"; clicked => { root.action("close", 0); } }
+                        Action { label: ""; icon: "M4 4L12 12 M12 4L4 12"; width: 28px; height: 28px; horizontal-padding: 7px; tone: ""; clicked => { root.action("close", 0); } }
                     }
                     if root.overlay == "deep" : DeepSearch {
                         vertical-stretch: 1;
