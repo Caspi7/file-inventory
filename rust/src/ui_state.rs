@@ -1,11 +1,15 @@
-use crate::{guide, treemap, AppWindow, DataRow, DriveChoice, GuideSection, Palette, ThemeMode, Tile, TreeRow};
+use crate::{guide, treemap, AppWindow, DataRow, DriveChoice, GuideSection, Palette, ThemeMode, Tile, TreeRow, UiChip};
 use file_inventory::{
     catalog::{Catalog, FileEntry, FileSort, FileSortColumn, FolderNode, SavedSearch, ScanRecord, SearchFilter, Volume},
     content::{ContentIndex, ContentMatchMode, ContentScanMode, ContentScanOptions, ContentSearchHit, ContentSearchOptions},
     duplicates::{self, DuplicateGroup, DuplicateOptions},
     export::{self, InventoryExportFormat},
-    scanner, sync::{self, CloudProvider, CloudSyncConfig}, updates,
-    util::{self, Theme}, EngineResult,
+    scanner,
+    semantic::{self, SemanticPack},
+    sync::{self, CloudProvider, CloudSyncConfig},
+    updates,
+    util::{self, Theme},
+    EngineResult, FacetChip,
 };
 use slint::{Color, ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
 use std::{
@@ -94,6 +98,7 @@ struct State {
     dialog_files: Vec<FileEntry>,
     history: Vec<ScanRecord>,
     hits: Vec<ContentSearchHit>,
+    chips: Vec<FacetChip>,
     deep_volumes: Vec<Volume>,
     map_volumes: Vec<Volume>,
     map_path: String,
@@ -110,6 +115,7 @@ struct State {
 pub fn bind(app: &AppWindow, catalog: Catalog, session: Rc<RefCell<Option<File>>>) {
     let (tx, rx) = mpsc::channel();
     let auto_update_check = updates::load_auto_check(&catalog.data_dir);
+    let initial_pack = semantic::load_pack_setting(&catalog.data_dir);
     let state = Rc::new(RefCell::new(State {
         theme: util::load_theme(&catalog.data_dir),
         visible: util::load_selected_drives(&catalog.data_dir),
@@ -123,7 +129,7 @@ pub fn bind(app: &AppWindow, catalog: Catalog, session: Rc<RefCell<Option<File>>
         choices: Vec::new(), choice_indices: Vec::new(),
         local_host: std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default(),
         checked: HashSet::new(), commands: Vec::new(), groups: Vec::new(),
-        dialog_files: Vec::new(), history: Vec::new(), hits: Vec::new(), deep_volumes: Vec::new(), map_volumes: Vec::new(),
+        dialog_files: Vec::new(), history: Vec::new(), hits: Vec::new(), chips: Vec::new(), deep_volumes: Vec::new(), map_volumes: Vec::new(),
         map_path: String::new(), tiles: Vec::new(), providers: Vec::new(), pending_import: None,
         removing: None, session, auto_update_check, pending_update: None,
     }));
@@ -145,6 +151,8 @@ pub fn bind(app: &AppWindow, catalog: Catalog, session: Rc<RefCell<Option<File>>
         slint::CloseRequestResponse::HideWindow
     });
     let mut state = state.borrow_mut();
+    app.set_semantic_pack(initial_pack.index());
+    state.refresh_semantic_status(app);
     state.apply_theme(app);
     state.show_saved(app);
     state.refresh_drives(app, true);
@@ -276,11 +284,17 @@ impl State {
             "deep" => {
                 self.open(app, "deep", "Deep Search");
                 self.deep_drives(app);
+                self.refresh_semantic_status(app);
                 self.estimate(app);
                 if !app.get_deep_query().trim().is_empty() { self.deep_search(app); }
             }
             "estimate" => self.estimate(app),
             "deep-search" => self.deep_search(app),
+            "deep-chip" => if let Some(chip) = self.chips.get(i).cloned() {
+                let updated = remove_chip_token(&app.get_deep_query(), &chip.token);
+                app.set_deep_query(updated.into());
+                self.deep_search(app);
+            },
             "deep-sort" => {
                 let ascending = app.get_deep_sort_column() != i as i32 || !app.get_deep_sort_ascending();
                 app.set_deep_sort_column(i as i32);
@@ -291,6 +305,15 @@ impl State {
             "deep-copy" | "deep-reveal" => if let Some(hit) = selected(&self.hits, app.get_deep_selection()) {
                 path_action(app, action == "deep-copy", &hit.full_path.to_string_lossy())?;
             },
+            "semantic-select" => {
+                let pack = SemanticPack::from_index(app.get_semantic_pack());
+                semantic::save_pack_setting(&self.catalog.data_dir, pack)?;
+                self.refresh_semantic_status(app);
+                if !app.get_deep_query().trim().is_empty() { self.deep_search(app); }
+            }
+            "semantic-install" => self.install_semantic_pack(app),
+            "semantic-backfill" => self.backfill_semantic_pack(app),
+            "semantic-remove" => self.remove_semantic_pack(app),
             "content-scan" => self.scan_content(app),
             "content-export" | "content-import" => self.content_exchange(app, action == "content-export"),
             "sync" if app.get_syncing() => self.cancel(app),
@@ -932,6 +955,15 @@ impl State {
         let local_host = self.local_host.clone();
         let query = app.get_deep_query().to_string();
         let extension = nonempty(app.get_deep_extension().trim());
+        if query.trim().is_empty() && extension.is_none() {
+            self.chips.clear();
+            self.hits.clear();
+            self.render_deep_chips(app);
+            self.render_deep_hits(app, None);
+            app.set_deep_close_match(false);
+            self.estimate(app);
+            return;
+        }
         let volume = self.deep_volume(app.get_deep_drive());
         let options = ContentSearchOptions {
             mode: match app.get_match_mode() { 1 => ContentMatchMode::AllWords, 2 => ContentMatchMode::AnyWord, 3 => ContentMatchMode::ExactPhrase, _ => ContentMatchMode::Smart },
@@ -960,13 +992,27 @@ impl State {
                     app.set_deep_status(format!("{} matches · {} ms · {} indexed files · {} DB{}",
                         found.hits.len(), elapsed.as_millis(),
                         stats.indexed_files, util::format_bytes(stats.database_bytes), if found.summary.is_empty() { String::new() } else { format!(" · {}", found.summary) }).into());
+                    state.chips = found.facet_chips;
+                    state.render_deep_chips(app);
                     state.hits = found.hits;
                     state.render_deep_hits(app, None);
                 }
                 Ok(None) => {}
-                Err(error) => app.set_deep_status(error.to_string().into()),
+                Err(error) => {
+                    state.chips.clear();
+                    state.render_deep_chips(app);
+                    app.set_deep_status(error.to_string().into());
+                }
             }
         });
+    }
+
+    fn render_deep_chips(&self, app: &AppWindow) {
+        app.set_deep_chips(model(self.chips.iter().map(|chip| UiChip {
+            label: chip.label.as_str().into(),
+            token: chip.token.as_str().into(),
+            tone: chip_tone(&chip.kind).into(),
+        })));
     }
 
     fn render_deep_hits(&mut self, app: &AppWindow, selected_id: Option<i64>) {
@@ -974,11 +1020,12 @@ impl State {
         let descending = !app.get_deep_sort_ascending();
         let direction = |order: std::cmp::Ordering| if descending { order.reverse() } else { order };
         match column {
-            0..=2 => {
+            0..=3 => {
                 let key = |hit: &ContentSearchHit| match column {
                     0 => hit.name.to_lowercase(),
                     1 => hit.volume_label.to_lowercase(),
-                    _ => hit.snippet.to_lowercase(),
+                    2 => hit.snippet.to_lowercase(),
+                    _ => hit.match_reason.to_lowercase(),
                 };
                 if descending {
                     self.hits.sort_by_cached_key(|hit| (std::cmp::Reverse(key(hit)), hit.file_id));
@@ -986,18 +1033,140 @@ impl State {
                     self.hits.sort_by_cached_key(|hit| (key(hit), hit.file_id));
                 }
             }
-            3 => self.hits.sort_by(|a, b| direction(a.bytes.cmp(&b.bytes)).then(a.file_id.cmp(&b.file_id))),
-            4 => self.hits.sort_by(|a, b| direction(a.modified.cmp(&b.modified)).then(a.file_id.cmp(&b.file_id))),
+            4 => self.hits.sort_by(|a, b| direction(a.bytes.cmp(&b.bytes)).then(a.file_id.cmp(&b.file_id))),
+            5 => self.hits.sort_by(|a, b| direction(a.modified.cmp(&b.modified)).then(a.file_id.cmp(&b.file_id))),
             _ => {} // The index returns hits in relevance order.
         }
         app.set_deep_rows(model(self.hits.iter().map(|hit| DataRow {
-            a: hit.name.as_str().into(), b: hit.volume_label.as_str().into(), c: hit.snippet.as_str().into(),
-            d: bytes(hit.bytes).into(), e: util::format_local_time(hit.modified).into(),
+            a: hit.name.as_str().into(),
+            b: hit.volume_label.as_str().into(),
+            c: if hit.snippet.is_empty() { hit.rel.as_str() } else { hit.snippet.as_str() }.into(),
+            d: bytes(hit.bytes).into(),
+            e: util::format_local_time(hit.modified).into(),
+            f: hit.match_reason.as_str().into(),
             icon_kind: file_icon_kind(false, hit.full_path.extension().and_then(|ext| ext.to_str()).unwrap_or_default()).into(),
+            status_tone: hit_match_tone(hit).into(),
             ..Default::default()
         })));
         let selection = selected_id.and_then(|id| self.hits.iter().position(|hit| hit.file_id == id));
         app.set_deep_selection(selection.map_or(-1, |i| i as i32));
+    }
+
+    fn refresh_semantic_status(&self, app: &AppWindow) {
+        let pack = SemanticPack::from_index(app.get_semantic_pack());
+        if !pack.is_enabled() {
+            app.set_semantic_installed(false);
+            app.set_semantic_status("Built-in EN/NL synonyms active".into());
+            return;
+        }
+        let info = semantic::pack_info(&self.catalog.data_dir, pack);
+        app.set_semantic_installed(info.installed);
+        if info.installed {
+            app.set_semantic_status(format!("Installed ({}) · Ready", util::format_bytes(info.disk_bytes)).into());
+        } else {
+            app.set_semantic_status("Not downloaded".into());
+        }
+    }
+
+    fn install_semantic_pack(&mut self, app: &AppWindow) {
+        let pack = SemanticPack::from_index(app.get_semantic_pack());
+        if !pack.is_enabled() { return; }
+        let _ = semantic::save_pack_setting(&self.catalog.data_dir, pack);
+        let label = format!("Downloading {}…", pack.display_name());
+        let Some(cancel) = self.begin(app, "semantic-install", &label) else { return; };
+        let weak = app.as_weak();
+        app.set_deep_progress(0.0);
+        app.set_deep_progress_text(label.into());
+        self.work(app, move |catalog| {
+            let mut last_tick: Option<Instant> = None;
+            semantic::download_pack(&catalog.data_dir, pack, &cancel, |done, total, file_name| {
+                let finished = total > 0 && done >= total;
+                if !finished && done > 0 && last_tick.is_some_and(|t| t.elapsed() < Duration::from_millis(80)) {
+                    return;
+                }
+                last_tick = Some(Instant::now());
+                let fraction = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
+                let text = if total > 0 {
+                    format!("Downloading {file_name} · {:.0}% · {} / {}", fraction * 100.0, util::format_bytes(done), util::format_bytes(total))
+                } else {
+                    format!("Downloading {file_name} · {}", util::format_bytes(done))
+                };
+                post_progress(&weak, &cancel, fraction, text, true);
+            })?;
+            let start = Instant::now();
+            let mut last_vec_tick: Option<Instant> = None;
+            let embedded = semantic::backfill_from_index(&catalog, pack, &cancel, |done, total| {
+                if total == 0 { return; }
+                if done < total && done > 0 && last_vec_tick.is_some_and(|t| t.elapsed() < Duration::from_millis(80)) {
+                    return;
+                }
+                last_vec_tick = Some(Instant::now());
+                let (fraction, eta) = progress(done, total, start.elapsed());
+                post_progress(&weak, &cancel, fraction, format!("Syncing AI vectors · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
+            })?;
+            let info = semantic::pack_info(&catalog.data_dir, pack);
+            Ok(format!("Installed {} ({}) · {embedded} files vectorized", pack.display_name(), util::format_bytes(info.disk_bytes)))
+        }, |state, app, result| {
+            let ok = result.is_ok();
+            state.refresh_semantic_status(app);
+            state.end(app, result);
+            app.set_deep_progress(if ok { 1.0 } else { 0.0 });
+            app.set_deep_progress_text(app.get_status());
+            state.estimate(app);
+            if ok && !app.get_deep_query().trim().is_empty() { state.deep_search(app); }
+        });
+    }
+
+    fn backfill_semantic_pack(&mut self, app: &AppWindow) {
+        let pack = SemanticPack::from_index(app.get_semantic_pack());
+        if !pack.is_enabled() { return; }
+        let Some(cancel) = self.begin(app, "semantic-backfill", "Syncing AI vectors…") else { return; };
+        let weak = app.as_weak();
+        app.set_deep_progress(0.0);
+        app.set_deep_progress_text("Syncing AI vectors…".into());
+        self.work(app, move |catalog| {
+            let start = Instant::now();
+            let mut last_tick: Option<Instant> = None;
+            let embedded = semantic::backfill_from_index(&catalog, pack, &cancel, |done, total| {
+                if total == 0 { return; }
+                if done < total && done > 0 && last_tick.is_some_and(|t| t.elapsed() < Duration::from_millis(80)) {
+                    return;
+                }
+                last_tick = Some(Instant::now());
+                let (fraction, eta) = progress(done, total, start.elapsed());
+                post_progress(&weak, &cancel, fraction, format!("Syncing AI vectors · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
+            })?;
+            Ok(if embedded == 0 {
+                "AI vectors already up to date".into()
+            } else {
+                format!("Synced {embedded} AI vectors · {}", pack.display_name())
+            })
+        }, |state, app, result| {
+            let ok = result.is_ok();
+            state.refresh_semantic_status(app);
+            state.end(app, result);
+            app.set_deep_progress(if ok { 1.0 } else { 0.0 });
+            app.set_deep_progress_text(app.get_status());
+            state.estimate(app);
+            if ok && !app.get_deep_query().trim().is_empty() { state.deep_search(app); }
+        });
+    }
+
+    fn remove_semantic_pack(&mut self, app: &AppWindow) {
+        let pack = SemanticPack::from_index(app.get_semantic_pack());
+        if !pack.is_enabled() { return; }
+        let Some(cancel) = self.begin(app, "semantic-remove", "Removing AI pack…") else { return; };
+        self.work(app, move |catalog| {
+            if cancel.load(Ordering::Relaxed) { return Ok("Operation cancelled".into()); }
+            semantic::remove_pack(&catalog.data_dir, pack)?;
+            Ok(format!("Removed {}", pack.display_name()))
+        }, |state, app, result| {
+            state.refresh_semantic_status(app);
+            state.end(app, result);
+            app.set_deep_progress(0.0);
+            app.set_deep_progress_text(app.get_status());
+            if !app.get_deep_query().trim().is_empty() { state.deep_search(app); }
+        });
     }
 
     fn scan_content(&mut self, app: &AppWindow) {
@@ -1504,6 +1673,70 @@ fn file_row(f: &FileEntry) -> DataRow {
 fn compact_file_row(f: &FileEntry) -> DataRow {
     let row = file_row(f);
     DataRow { a: row.a, b: row.d, c: row.c, d: row.f, ..Default::default() }
+}
+
+fn chip_tone(kind: &str) -> &'static str {
+    match kind {
+        "ext" => "accent",
+        "size" => "warning",
+        "date" => "teal",
+        "status" => "success",
+        "tag" => "imported",
+        _ => "accent",
+    }
+}
+
+fn hit_match_tone(hit: &ContentSearchHit) -> &'static str {
+    if hit.match_reason.is_empty() {
+        return "";
+    }
+    let lower = hit.match_reason.to_ascii_lowercase();
+    if lower.starts_with("filename") || lower.starts_with("facet") || lower.starts_with("path") {
+        return "accent";
+    }
+    match hit.match_tone.as_str() {
+        "success" => "success",
+        "warning" => "warning",
+        "danger" => "danger",
+        "accent" | "info" | "blue" | "drive" => "accent",
+        "imported" | "semantic" | "violet" => "imported",
+        _ if lower.contains("exact") => "success",
+        _ if lower.contains("fuzzy") || lower.contains("close") || lower.contains("typo") => "warning",
+        _ if lower.contains("semantic") => "imported",
+        _ => "accent",
+    }
+}
+
+fn remove_chip_token(query: &str, token: &str) -> String {
+    let needle: Vec<&str> = token.split_whitespace().collect();
+    if needle.is_empty() {
+        return query.trim().to_owned();
+    }
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if needle.len() <= words.len() {
+        if let Some(pos) = words.windows(needle.len()).position(|win| {
+            win.iter().zip(&needle).all(|(a, b)| a.eq_ignore_ascii_case(b))
+        }) {
+            let mut remaining = Vec::with_capacity(words.len() - needle.len());
+            remaining.extend_from_slice(&words[..pos]);
+            remaining.extend_from_slice(&words[pos + needle.len()..]);
+            return remaining.join(" ");
+        }
+    }
+    let lower_query = query.to_lowercase();
+    let lower_token = token.to_lowercase();
+    if lower_query.len() == query.len() && lower_token.len() == token.len() {
+        if let Some(idx) = lower_query.find(&lower_token) {
+            if query.is_char_boundary(idx) && query.is_char_boundary(idx + token.len()) {
+                let mut s = String::with_capacity(query.len());
+                s.push_str(&query[..idx]);
+                s.push(' ');
+                s.push_str(&query[idx + token.len()..]);
+                return s.split_whitespace().collect::<Vec<_>>().join(" ");
+            }
+        }
+    }
+    query.replacen(token, "", 1).split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn message(app: &AppWindow, text: impl Into<SharedString>) {
