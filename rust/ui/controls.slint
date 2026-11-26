@@ -4,6 +4,7 @@ import { Palette } from "theme.slint";
 export struct DataRow { a: string, b: string, c: string, d: string, e: string, f: string, g: string, icon-kind: string, status-tone: string }
 export struct TreeRow { title: string, depth: int, marker: string, kind: string }
 export struct Tile { x: float, y: float, w: float, h: float, label: string, detail: string, tint: color }
+export struct UiChip { label: string, token: string, tone: string }
 
 export component Label inherits Text {
     color: Palette.fg;
@@ -34,13 +35,17 @@ export component SemanticPill inherits Rectangle {
     in property <string> tone;
     in property <bool> dot;
     in property <length> max-pill-width: 166px;
+    property <bool> is-blue: tone == "accent" || tone == "info" || tone == "blue" || tone == "drive";
+    property <bool> is-teal: tone == "teal";
     property <color> ink: tone == "success" ? Palette.success : tone == "warning" ? Palette.warning
-        : tone == "danger" ? Palette.danger : Palette.imported;
+        : tone == "danger" ? Palette.danger : is-blue ? (Palette.dark ? Palette.drive : Palette.accent)
+        : is-teal ? Palette.teal : Palette.imported;
     width: min(pill-text.preferred-width + (dot ? 29px : 16px), max-pill-width);
     height: 22px;
     border-radius: self.height / 2;
     background: tone == "success" ? Palette.success-bg : tone == "warning" ? Palette.warning-bg
-        : tone == "danger" ? Palette.danger-bg : Palette.imported-bg;
+        : tone == "danger" ? Palette.danger-bg : is-blue ? (Palette.dark ? #152c44 : #e0f2fe)
+        : is-teal ? (Palette.dark ? #113235 : #ccfbf1) : Palette.imported-bg;
     if root.dot : Rectangle {
         x: 8px; y: (parent.height - self.height) / 2;
         width: 6px; height: 6px; border-radius: 3px; background: root.ink;
@@ -48,6 +53,33 @@ export component SemanticPill inherits Rectangle {
     pill-text := Label {
         x: root.dot ? 21px : 8px; width: parent.width - self.x - 8px;
         height: parent.height; text: root.text; color: root.ink; horizontal-alignment: center;
+    }
+}
+
+export component ChipPill inherits Rectangle {
+    in property <string> text;
+    in property <string> tone: "accent";
+    callback clicked;
+    property <bool> is-blue: tone == "accent" || tone == "info" || tone == "blue" || tone == "drive";
+    property <bool> is-teal: tone == "teal";
+    property <color> ink: tone == "success" ? Palette.success : tone == "warning" ? Palette.warning
+        : tone == "danger" ? Palette.danger : is-blue ? (Palette.dark ? Palette.drive : Palette.accent)
+        : is-teal ? Palette.teal : Palette.imported;
+    width: min(chip-label.preferred-width + 20px, 240px);
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: hit.has-hover ? root.ink : transparent;
+    background: tone == "success" ? Palette.success-bg : tone == "warning" ? Palette.warning-bg
+        : tone == "danger" ? Palette.danger-bg : is-blue ? (Palette.dark ? #152c44 : #e0f2fe)
+        : is-teal ? (Palette.dark ? #113235 : #ccfbf1) : Palette.imported-bg;
+    chip-label := Label {
+        x: 10px; width: parent.width - 20px; height: parent.height;
+        text: root.text; color: root.ink; horizontal-alignment: center;
+    }
+    hit := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { root.clicked(); }
     }
 }
 
@@ -132,11 +164,13 @@ component Cells inherits HorizontalLayout {
     property <bool> main: column-mode == "main";
     property <bool> deep: column-mode == "deep";
     property <[string]> titles: main ? [headers.a, headers.b, headers.c, headers.d, headers.e, headers.f, headers.g]
-        : deep ? [headers.a, headers.b, headers.c, headers.d, headers.e]
+        : deep ? [headers.a, headers.b, headers.c, headers.f, headers.d, headers.e]
         : headers.d != "" ? [headers.a, headers.b, headers.c, headers.d] : [headers.a, headers.b, headers.c];
-    property <[string]> values: [cells.a, cells.b, cells.c, cells.d, cells.e, cells.f, cells.g];
+    property <[string]> values: deep
+        ? [cells.a, cells.b, cells.c, cells.f, cells.d, cells.e, cells.g]
+        : [cells.a, cells.b, cells.c, cells.d, cells.e, cells.f, cells.g];
     property <[length]> widths: main ? [200px, 64px, 140px, 145px, 94px, 86px, 132px]
-        : deep ? [210px, 155px, 180px, 86px, 132px, 0px, 0px]
+        : deep ? [205px, 145px, 180px, 86px, 84px, 132px, 0px]
         : [150px, 110px, 100px, 100px, 128px, 0px, 0px];
     padding-left: 8px; padding-right: 22px; spacing: 8px;
     for title[i] in root.titles : cell := Rectangle {
@@ -148,8 +182,8 @@ component Cells inherits HorizontalLayout {
         property <bool> sortable: root.header && (root.main || root.deep);
         background: sortable && sort-hit.has-hover ? Palette.surface-hover : transparent;
         property <bool> show-icon: !root.header && i == 0 && root.cells.icon-kind != "";
-        property <bool> show-status: !root.header && !root.selected && root.cells.status-tone != ""
-            && ((root.main && i == 4) || (root.column-mode == "changes" && i == 0));
+        property <bool> show-status: !root.header && !root.selected && root.cells.status-tone != "" && root.values[i] != ""
+            && ((root.main && i == 4) || (root.deep && i == 3) || (root.column-mode == "changes" && i == 0));
         if cell.show-icon : ItemIcon {
             x: 0px; y: (parent.height - self.height) / 2; kind: root.cells.icon-kind;
         }
@@ -162,7 +196,7 @@ component Cells inherits HorizontalLayout {
             text: root.header ? title + (root.sort-column == i ? (root.sort-ascending ? " ▲" : " ▼") : "") : root.values[i];
             color: root.ink;
             wrap: no-wrap; overflow: elide; vertical-alignment: center;
-            horizontal-alignment: (root.main && i >= 5) || (root.deep && i >= 3) ? right : left;
+            horizontal-alignment: (root.main && i >= 5) || (root.deep && i >= 4) ? right : left;
         }
         sort-hit := TouchArea {
             enabled: parent.sortable;
@@ -182,7 +216,7 @@ export component Grid inherits VerticalLayout {
     callback sort(int);
     callback selected(int);
     callback activated(int);
-    property <length> table-width: max(items.visible-width, column-mode == "main" ? 939px : column-mode == "deep" ? 825px : headers.d != "" ? 514px : 406px);
+    property <length> table-width: max(items.visible-width, column-mode == "main" ? 939px : column-mode == "deep" ? 902px : headers.d != "" ? 514px : 406px);
     Rectangle {
         height: 29px; background: Palette.header-bg; clip: true;
         Cells {
