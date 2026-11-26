@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.2.6"
+  #define BuildVersion "1.6.2"
 #endif
 
 [Setup]
@@ -17,6 +17,7 @@ DefaultDirName={localappdata}\Programs\File Inventory
 DefaultGroupName=File Inventory
 DisableDirPage=no
 UsePreviousAppDir=yes
+UsePreviousTasks=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 MinVersion=10.0
@@ -43,7 +44,13 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignorever
 [Icons]
 Name: "{userprograms}\File Inventory"; Filename: "{app}\FileInventory.exe"; WorkingDir: "{app}"
 
+[Tasks]
+Name: "linguistic_en"; Description: "Download English Linguistic Pack (~29 MB) for concept-based Deep Search"; GroupDescription: "Optional Advanced Linguistic Search:"; Flags: unchecked exclusive
+Name: "linguistic_multi"; Description: "Download Multilingual (EN + NL) Linguistic Pack for concept-based Deep Search"; GroupDescription: "Optional Advanced Linguistic Search:"; Flags: unchecked exclusive
+
 [Run]
+Filename: "{app}\FileInventory.exe"; Parameters: "--install-pack en"; StatusMsg: "Downloading English Linguistic Pack..."; Flags: runhidden waituntilterminated skipifsilent; Tasks: linguistic_en
+Filename: "{app}\FileInventory.exe"; Parameters: "--install-pack multilingual"; StatusMsg: "Downloading Multilingual Linguistic Pack..."; Flags: runhidden waituntilterminated skipifsilent; Tasks: linguistic_multi
 Filename: "{app}\FileInventory.exe"; Description: "Open File Inventory"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\FileInventory.exe"; Flags: nowait skipifnotsilent; Check: IsAppUpdate
 
