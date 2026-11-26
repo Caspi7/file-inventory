@@ -10,8 +10,8 @@ fn main() {
         }
         res.set("ProductName", "File Inventory");
         res.set("FileDescription", "File Inventory");
-        res.set("FileVersion", "1.6.2.0");
-        res.set("ProductVersion", "1.6.2");
+        res.set("FileVersion", "1.6.3.0");
+        res.set("ProductVersion", "1.6.3");
         if res.compile().is_ok() && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
             // The GNU linker skips the resource-only object when it is only in a static archive.
             let resource = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("resource.o");
