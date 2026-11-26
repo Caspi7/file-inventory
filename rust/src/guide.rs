@@ -32,11 +32,11 @@ Use ★ Saved Searches to save and reopen frequent queries. Select any file to e
 
 Smart Search understands natural-language filters in English and Dutch — try large pdf invoice from last month without draft or grote excel vorige maand. Inferred filters appear as clickable Active Filter chips (such as Type: PDF ×, Modified: Last 30d ×, or Size: > 10 MB ×); click any chip to remove that filter and immediately broaden your search.
 
-Every result displays a sortable Match badge explaining why it matched: Exact (green) for direct text hits, Fuzzy or Close (amber) for typo-tolerant SymSpell or synonym matches, Filename or Facet (blue) for name and metadata matches, and Semantic (violet) for conceptual AI matches. Excerpts highlight matched terms directly with «word» markers.
+Every result displays a sortable Match badge explaining why it matched: Exact (green) for direct text hits, Fuzzy or Close (amber) for typo-tolerant SymSpell or synonym matches, Filename or Facet (blue) for name and metadata matches, and Concept (violet) for matches by meaning. Excerpts highlight matched terms directly with «word» markers.
 
 Use AND, OR, NOT, -exclude, \"exact phrase\", or (group) when you want strict Boolean control.
 
-In the Semantic AI bar at the bottom of Deep Search, you can optionally download a local AI pack in one click — English AI (~30 MB) or Multilingual EN + NL AI (~128 MB). Once installed, File Inventory vectorizes indexed documents locally so you can find relevant files by meaning even when zero exact words overlap.
+In the Linguistic Search row, select English Pack or Multilingual (EN + NL) and choose Download Pack. Advanced Linguistic Search indexes documents locally so you can find files by meaning. Choose Update Index to include any previously scanned files.
 
 Choose Eco, Balanced, or Turbo to control scanning resource use, and enable Skip system folders to ignore common system and build directories.",
     },
