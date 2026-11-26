@@ -1056,7 +1056,7 @@ impl State {
         let pack = SemanticPack::from_index(app.get_semantic_pack());
         if !pack.is_enabled() {
             app.set_semantic_installed(false);
-            app.set_semantic_status("Built-in EN/NL synonyms active".into());
+            app.set_semantic_status("Standard lexical + synonym search".into());
             return;
         }
         let info = semantic::pack_info(&self.catalog.data_dir, pack);
@@ -1102,10 +1102,10 @@ impl State {
                 }
                 last_vec_tick = Some(Instant::now());
                 let (fraction, eta) = progress(done, total, start.elapsed());
-                post_progress(&weak, &cancel, fraction, format!("Syncing AI vectors · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
+                post_progress(&weak, &cancel, fraction, format!("Updating linguistic index · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
             })?;
             let info = semantic::pack_info(&catalog.data_dir, pack);
-            Ok(format!("Installed {} ({}) · {embedded} files vectorized", pack.display_name(), util::format_bytes(info.disk_bytes)))
+            Ok(format!("Installed {} ({}) · {embedded} files indexed for Linguistic Search", pack.display_name(), util::format_bytes(info.disk_bytes)))
         }, |state, app, result| {
             let ok = result.is_ok();
             state.refresh_semantic_status(app);
@@ -1120,10 +1120,10 @@ impl State {
     fn backfill_semantic_pack(&mut self, app: &AppWindow) {
         let pack = SemanticPack::from_index(app.get_semantic_pack());
         if !pack.is_enabled() { return; }
-        let Some(cancel) = self.begin(app, "semantic-backfill", "Syncing AI vectors…") else { return; };
+        let Some(cancel) = self.begin(app, "semantic-backfill", "Updating linguistic index…") else { return; };
         let weak = app.as_weak();
         app.set_deep_progress(0.0);
-        app.set_deep_progress_text("Syncing AI vectors…".into());
+        app.set_deep_progress_text("Updating linguistic index…".into());
         self.work(app, move |catalog| {
             let start = Instant::now();
             let mut last_tick: Option<Instant> = None;
@@ -1134,12 +1134,12 @@ impl State {
                 }
                 last_tick = Some(Instant::now());
                 let (fraction, eta) = progress(done, total, start.elapsed());
-                post_progress(&weak, &cancel, fraction, format!("Syncing AI vectors · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
+                post_progress(&weak, &cancel, fraction, format!("Updating linguistic index · {:.0}% · {done}/{total} · ETA {eta}", fraction * 100.0), true);
             })?;
             Ok(if embedded == 0 {
-                "AI vectors already up to date".into()
+                "Linguistic index already up to date".into()
             } else {
-                format!("Synced {embedded} AI vectors · {}", pack.display_name())
+                format!("Updated linguistic index for {embedded} files · {}", pack.display_name())
             })
         }, |state, app, result| {
             let ok = result.is_ok();
@@ -1155,7 +1155,7 @@ impl State {
     fn remove_semantic_pack(&mut self, app: &AppWindow) {
         let pack = SemanticPack::from_index(app.get_semantic_pack());
         if !pack.is_enabled() { return; }
-        let Some(cancel) = self.begin(app, "semantic-remove", "Removing AI pack…") else { return; };
+        let Some(cancel) = self.begin(app, "semantic-remove", "Removing Linguistic Pack…") else { return; };
         self.work(app, move |catalog| {
             if cancel.load(Ordering::Relaxed) { return Ok("Operation cancelled".into()); }
             semantic::remove_pack(&catalog.data_dir, pack)?;
@@ -1699,10 +1699,10 @@ fn hit_match_tone(hit: &ContentSearchHit) -> &'static str {
         "warning" => "warning",
         "danger" => "danger",
         "accent" | "info" | "blue" | "drive" => "accent",
-        "imported" | "semantic" | "violet" => "imported",
+        "imported" | "concept" | "violet" => "imported",
         _ if lower.contains("exact") => "success",
         _ if lower.contains("fuzzy") || lower.contains("close") || lower.contains("typo") => "warning",
-        _ if lower.contains("semantic") => "imported",
+        _ if lower.contains("concept") => "imported",
         _ => "accent",
     }
 }
