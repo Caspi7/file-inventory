@@ -1,13 +1,14 @@
 import { ScrollView } from "std-widgets.slint";
-import { Action } from "controls.slint";
+import { Action, SemanticPill } from "controls.slint";
 import { Palette } from "theme.slint";
 
-export struct GuideSection { title: string, subtitle: string, body: string }
+export struct GuideCard { heading: string, badge: string, tone: string, body: string, example: string }
+export struct GuideSection { title: string, subtitle: string, cards: [GuideCard] }
 
 export component Guide inherits VerticalLayout {
     in property <[GuideSection]> sections;
     property <int> selected: 0;
-    property <GuideSection> current: root.sections.length > 0 ? root.sections[root.selected] : { title: "", subtitle: "", body: "" };
+    property <GuideSection> current: root.sections.length > 0 ? root.sections[root.selected] : { title: "", subtitle: "", cards: [] };
     spacing: 12px;
 
     HorizontalLayout {
@@ -16,7 +17,10 @@ export component Guide inherits VerticalLayout {
             tab: true;
             label: section.title;
             primary: i == root.selected;
-            clicked => { root.selected = i; }
+            clicked => {
+                root.selected = i;
+                guide-scroll.content-y = 0px;
+            }
         }
     }
 
@@ -36,15 +40,49 @@ export component Guide inherits VerticalLayout {
             }
             guide-scroll := ScrollView {
                 vertical-stretch: 1;
-                viewport-width: self.visible-width;
-                viewport-height: max(self.visible-height, guide-text.preferred-height + 16px);
-                guide-text := Text {
-                    x: 2px; y: 2px;
-                    width: max(100px, guide-scroll.visible-width - 16px);
-                    text: root.current.body;
-                    color: Palette.fg;
-                    font-size: 14px;
-                    wrap: word-wrap;
+                content-width: self.visible-width;
+                content-height: max(self.visible-height, cards.preferred-height);
+                cards := VerticalLayout {
+                    width: guide-scroll.visible-width;
+                    height: self.preferred-height;
+                    padding-right: 8px;
+                    padding-bottom: 4px;
+                    spacing: 10px;
+                    for card in root.current.cards : Rectangle {
+                        preferred-height: card-layout.preferred-height;
+                        background: Palette.surface;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        border-radius: 7px;
+                        card-layout := VerticalLayout {
+                            padding: 12px;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 8px;
+                                Text {
+                                    text: card.heading;
+                                    font-size: 14px;
+                                    font-weight: 650;
+                                    color: Palette.fg;
+                                    vertical-alignment: center;
+                                }
+                                if card.badge != "" : SemanticPill { text: card.badge; tone: card.tone; }
+                            }
+                            Text {
+                                text: card.body;
+                                font-size: 13px;
+                                color: Palette.fg;
+                                wrap: word-wrap;
+                            }
+                            if card.example != "" : Text {
+                                text: card.example;
+                                font-size: 12.5px;
+                                color: Palette.accent;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
                 }
             }
         }
