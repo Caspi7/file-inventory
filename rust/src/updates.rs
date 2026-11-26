@@ -13,8 +13,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.2";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.2
+pub const APP_VERSION: &str = "1.6.3";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.3
+- Fixed Linguistic Search dropdown stretching vertically and Cancel button stretching horizontally in Deep Search.
+- Fixed Release Notes and User Guide scrolling (explicit ScrollView viewport-height bindings).
+
+File Inventory 1.6.2
 - Added a compact close button in the top-right corner of the Deep Search window.
 - Advanced Linguistic Search packs are available from GitHub Releases and as optional installer downloads.
 
