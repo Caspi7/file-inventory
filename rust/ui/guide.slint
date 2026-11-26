@@ -34,13 +34,16 @@ export component Guide inherits VerticalLayout {
                 font-weight: 650;
                 wrap: word-wrap;
             }
-            ScrollView {
+            guide-scroll := ScrollView {
                 vertical-stretch: 1;
-                Text {
-                    width: parent.width;
+                viewport-width: self.visible-width;
+                viewport-height: max(self.visible-height, guide-text.preferred-height + 16px);
+                guide-text := Text {
+                    x: 2px; y: 2px;
+                    width: max(100px, guide-scroll.visible-width - 16px);
                     text: root.current.body;
                     color: Palette.fg;
-                    font-size: 15px;
+                    font-size: 14px;
                     wrap: word-wrap;
                 }
             }
