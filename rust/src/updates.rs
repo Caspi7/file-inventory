@@ -13,16 +13,17 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.1";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.1
-- Added a dedicated Close Deep Search button and backdrop click-to-close on the Deep Search window.
+pub const APP_VERSION: &str = "1.6.2";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.2
+- Added a compact close button in the top-right corner of the Deep Search window.
+- Advanced Linguistic Search packs are available from GitHub Releases and as optional installer downloads.
 
 File Inventory 1.6.0
 - Natural-Language Intent & Facet Chips: Describe what you are looking for in English or Dutch (e.g. \"large pdf invoice from last month without draft\" or \"grote excel vorige maand\") with 1-click dismissible filter chips.
 - Path-Aware Main Search: Search keywords now match across folder paths and filenames together (e.g. \"2024 taxes pdf\" finds Taxes\\2024\\return.pdf).
 - Sub-Millisecond SymSpell Fuzzy Engine & Bilingual Synonyms: Instant Damerau-Levenshtein typo tolerance, diacritic folding, EN/NL concept expansion, and crisp «word» excerpt highlights.
-- Explainable Match Badges: Deep Search results now show sortable Exact, Fuzzy, Close, Filename, Facet, and Semantic match badges.
-- Optional 1-Click Local Semantic AI Packs: Download English (~30 MB) or Multilingual EN + NL (~128 MB) static embedding packs right inside Deep Search to find files by meaning offline with zero external dependencies.
+- Explainable Match Badges: Deep Search results now show sortable Exact, Fuzzy, Close, Filename, Facet, and Concept match badges.
+- Optional Linguistic Packs let you find files by meaning offline. Choose English or Multilingual (EN + NL) in Deep Search.
 
 File Inventory 1.5.6
 - Added a built-in Help & User Guide with six browsable topics, accessible from the command bar or F1.
@@ -38,7 +39,7 @@ File Inventory 1.5.3
 - Added automatic startup update checks and one-click installation with download progress and SHA-256 verification.
 
 File Inventory 1.5.2
-- Restored gold folder icons and added semantic colors for drives, file types, statuses, and actions across all themes.
+- Restored gold folder icons and added distinct colors for drives, file types, statuses, and actions across all themes.
 
 File Inventory 1.5.1
 Local and imported drives are grouped by host. File tables have aligned, sortable columns, and Deep Search refreshes when options change.
