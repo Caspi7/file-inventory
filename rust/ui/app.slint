@@ -1,13 +1,13 @@
 import { LineEdit, ComboBox, CheckBox, ListView, Palette as WidgetPalette } from "std-widgets.slint";
-import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile, ItemIcon } from "controls.slint";
+import { Action, Label, DataRow, Grid, Meter, TreeRow, Tile, ItemIcon, UiChip } from "controls.slint";
 import { DeepSearch } from "deep_search.slint";
 import { Guide, GuideSection } from "guide.slint";
 import { DialogBody, DriveChoice } from "dialogs.slint";
 import { Palette, ThemeMode } from "theme.slint";
-export { Palette, ThemeMode }
+export { Palette, ThemeMode, UiChip }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.5.6";
+    title: "File Inventory 1.6.0";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -68,6 +68,7 @@ export component AppWindow inherits Window {
     in-out property <int> report-format: 0;
     in-out property <[string]> deep-drives;
     in-out property <[DataRow]> deep-rows;
+    in-out property <[UiChip]> deep-chips;
     in-out property <string> deep-status;
     in-out property <bool> deep-close-match;
     in-out property <string> deep-estimate;
@@ -79,6 +80,9 @@ export component AppWindow inherits Window {
     in-out property <int> scan-drive: 0;
     in-out property <int> match-mode: 0;
     in-out property <int> resource-mode: 0;
+    in-out property <int> semantic-pack: 0;
+    in-out property <string> semantic-status: "Built-in EN/NL synonyms active";
+    in-out property <bool> semantic-installed: false;
     in-out property <bool> fuzzy: true;
     in-out property <bool> text-files: true;
     in-out property <bool> office: true;
@@ -250,18 +254,22 @@ export component AppWindow inherits Window {
                         vertical-stretch: 1;
                         drives: root.deep-drives;
                         rows: root.deep-rows;
+                        chips: root.deep-chips;
                         status: root.deep-status;
                         close-match: root.deep-close-match;
                         estimate: root.deep-estimate;
                         progress-text: root.deep-progress-text;
                         progress: root.deep-progress;
                         busy: root.busy;
+                        semantic-status: root.semantic-status;
+                        semantic-installed: root.semantic-installed;
                         query <=> root.deep-query;
                         extension <=> root.deep-extension;
                         drive <=> root.deep-drive;
                         scan-drive <=> root.scan-drive;
                         match-mode <=> root.match-mode;
                         resource-mode <=> root.resource-mode;
+                        semantic-pack <=> root.semantic-pack;
                         fuzzy <=> root.fuzzy;
                         text-files <=> root.text-files;
                         office <=> root.office;
@@ -271,6 +279,7 @@ export component AppWindow inherits Window {
                         selection <=> root.deep-selection;
                         sort-column: root.deep-sort-column; sort-ascending: root.deep-sort-ascending;
                         sort(i) => { root.action("deep-sort", i); }
+                        dismiss-chip(i) => { root.action("deep-chip", i); }
                         action(name) => { root.action(name, 0); }
                     }
                     if root.overlay == "help" : Guide {
