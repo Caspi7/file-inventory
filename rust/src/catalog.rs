@@ -183,7 +183,7 @@ impl Catalog {
         }
         tx.execute("DELETE FROM volumes WHERE id=?1", [id])?;
         tx.commit()?;
-        let _ = db.execute_batch("PRAGMA incremental_vacuum;");
+        let _ = db.execute_batch("PRAGMA incremental_vacuum(2000);");
         let content_db_path = self.data_dir.join("content.sqlite3");
         if content_db_path.exists() {
             if let Ok(mut cdb) = Connection::open(&content_db_path) {
@@ -196,7 +196,7 @@ impl Catalog {
                     let _ = ctx.execute("DELETE FROM content_files WHERE volume=?1", [id]);
                     let _ = ctx.commit();
                 }
-                let _ = cdb.execute_batch("PRAGMA incremental_vacuum;");
+                let _ = cdb.execute_batch("PRAGMA incremental_vacuum(2000);");
             }
         }
         Ok(())
