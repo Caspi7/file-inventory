@@ -70,7 +70,7 @@ export component DeepSearch inherits VerticalLayout {
         height: 36px; background: Palette.surface-alt; border-radius: 5px;
         HorizontalLayout {
             padding: 4px; padding-left: 8px; spacing: 8px;
-            Label { horizontal-stretch: 1; text: "Try large pdf invoice from last month without draft, invoice/receipt 2025, or enable Semantic AI below."; }
+            Label { horizontal-stretch: 1; text: "Try large pdf invoice from last month without draft, invoice/receipt 2025, or enable Linguistic Search below."; }
             Action { label: "Open Full Guide"; clicked => { root.action("help"); } }
         }
     }
@@ -91,7 +91,6 @@ export component DeepSearch inherits VerticalLayout {
         Action { label: "Copy Path"; enabled: root.selection >= 0; clicked => { root.action("deep-copy"); } }
         Action { label: "Reveal in Explorer"; icon-tint: Palette.folder; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("deep-reveal"); } }
         Rectangle { horizontal-stretch: 1; }
-        Action { label: "Close Deep Search"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close"); } }
     }
     Rectangle {
         background: Palette.surface-readonly; border-color: Palette.border; border-width: 1px; border-radius: 7px;
@@ -125,21 +124,21 @@ export component DeepSearch inherits VerticalLayout {
             Rectangle { height: 1px; background: Palette.border; }
             HorizontalLayout {
                 spacing: 8px;
-                Label { text: "Semantic AI"; font-weight: 600; }
+                Label { text: "Linguistic Search"; font-weight: 600; }
                 ComboBox {
-                    model: ["Off (Fast Lexical + Synonyms)", "English AI (~30 MB)", "Multilingual EN + NL AI (~128 MB)"];
+                    model: ["Off", "English Pack", "Multilingual (EN + NL)"];
                     current-index <=> root.semantic-pack;
-                    width: 255px;
+                    width: 190px;
                     enabled: !root.busy;
                     selected => { root.action("semantic-select"); }
                 }
                 Label { text: root.semantic-status; color: Palette.muted; horizontal-stretch: 1; }
                 if root.semantic-pack > 0 && !root.semantic-installed : Action {
-                    label: "Download AI Pack"; primary: true; enabled: !root.busy;
+                    label: "Download Pack"; primary: true; enabled: !root.busy;
                     clicked => { root.action("semantic-install"); }
                 }
                 if root.semantic-pack > 0 && root.semantic-installed : Action {
-                    label: "Sync AI Vectors"; enabled: !root.busy;
+                    label: "Update Index"; enabled: !root.busy;
                     clicked => { root.action("semantic-backfill"); }
                 }
                 if root.semantic-pack > 0 && root.semantic-installed : Action {
