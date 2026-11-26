@@ -183,11 +183,15 @@ export component DialogBody inherits VerticalLayout {
             Meter { value: root.update-progress; horizontal-stretch: 1; }
             Action { label: "Cancel download"; tone: "danger"; clicked => { root.action("cancel", 0); } }
         }
-        ScrollView {
+        notes-scroll := ScrollView {
             vertical-stretch: 1;
-            Text {
+            viewport-width: self.visible-width;
+            viewport-height: max(self.visible-height, notes-text.preferred-height + 16px);
+            notes-text := Text {
+                x: 4px; y: 4px;
+                width: max(100px, notes-scroll.visible-width - 16px);
                 text: root.update-notes == "" ? root.field : root.update-notes + "\n\n" + root.field;
-                color: Palette.fg; wrap: word-wrap; width: parent.width;
+                color: Palette.fg; wrap: word-wrap;
             }
         }
         CheckBox { text: "Check for updates on startup"; checked <=> root.flag; toggled => { root.action("update-auto-toggle", 0); } }
