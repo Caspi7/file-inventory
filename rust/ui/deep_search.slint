@@ -1,22 +1,26 @@
-import { LineEdit, ComboBox, CheckBox, VerticalBox, HorizontalBox } from "std-widgets.slint";
-import { Action, Label, Grid, DataRow, Meter, SemanticPill } from "controls.slint";
+import { LineEdit, ComboBox, CheckBox } from "std-widgets.slint";
+import { Action, ChipPill, Label, Grid, DataRow, Meter, SemanticPill, UiChip } from "controls.slint";
 import { Palette } from "theme.slint";
 
 export component DeepSearch inherits VerticalLayout {
     in property <[string]> drives;
     in property <[DataRow]> rows;
+    in property <[UiChip]> chips;
     in property <string> status;
     in property <bool> close-match;
     in property <string> estimate;
     in property <string> progress-text;
     in property <float> progress;
     in property <bool> busy;
+    in property <string> semantic-status;
+    in property <bool> semantic-installed;
     in-out property <string> query;
     in-out property <string> extension;
     in-out property <int> drive: 0;
     in-out property <int> scan-drive: 0;
     in-out property <int> match-mode: 0;
     in-out property <int> resource-mode: 0;
+    in-out property <int> semantic-pack: 0;
     in-out property <bool> fuzzy: true;
     in-out property <bool> text-files: true;
     in-out property <bool> office: true;
@@ -28,13 +32,14 @@ export component DeepSearch inherits VerticalLayout {
     in property <int> sort-column: -1;
     in property <bool> sort-ascending: true;
     callback sort(int);
+    callback dismiss-chip(int);
     callback action(string);
-    spacing: 8px;
+    spacing: 7px;
     HorizontalLayout {
         spacing: 8px;
-        LineEdit { placeholder-text: "Search inside files… e.g. invoice 2025 without draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
+        LineEdit { placeholder-text: "Describe or search… e.g. large pdf invoice from last month without draft"; text <=> root.query; horizontal-stretch: 1; accepted => { root.action("deep-search"); } }
         ComboBox { model: root.drives; current-index <=> root.drive; width: 220px; selected => { root.action("deep-search"); } }
-        LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 100px; }
+        LineEdit { placeholder-text: "Extension"; text <=> root.extension; width: 100px; accepted => { root.action("deep-search"); } }
         Action { label: "Search"; primary: true; clicked => { root.action("deep-search"); } }
     }
     HorizontalLayout {
@@ -51,22 +56,32 @@ export component DeepSearch inherits VerticalLayout {
         }
         Rectangle { horizontal-stretch: 1; }
     }
+    if root.chips.length > 0 : HorizontalLayout {
+        height: 26px; padding-top: 2px; padding-bottom: 2px; spacing: 6px;
+        Label { text: "Active filters:"; color: Palette.muted; }
+        for chip[i] in root.chips : ChipPill {
+            text: chip.label + "  ×";
+            tone: chip.tone;
+            clicked => { root.dismiss-chip(i); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
     if tips : Rectangle {
-        height: 38px; background: Palette.surface-alt; border-radius: 5px;
+        height: 36px; background: Palette.surface-alt; border-radius: 5px;
         HorizontalLayout {
             padding: 4px; padding-left: 8px; spacing: 8px;
-            Label { horizontal-stretch: 1; text: "Try invoice/receipt 2025 without draft, \"annual report\", or backup AND recovery."; }
+            Label { horizontal-stretch: 1; text: "Try large pdf invoice from last month without draft, invoice/receipt 2025, or enable Semantic AI below."; }
             Action { label: "Open Full Guide"; clicked => { root.action("help"); } }
         }
     }
     HorizontalLayout {
-        spacing: 8px; height: 23px;
+        spacing: 8px; height: 22px;
         Label { text: root.status; color: Palette.muted; horizontal-stretch: 1; }
         if root.close-match : SemanticPill { text: "Close match"; tone: "warning"; }
     }
     Grid {
         vertical-stretch: 1; column-mode: "deep"; rows: root.rows; selection <=> root.selection;
-        headers: { a: "Filename", b: "Drive", c: "Excerpt", d: "Size", e: "Modified" };
+        headers: { a: "Filename", b: "Drive", c: "Excerpt", d: "Size", e: "Modified", f: "Match" };
         sort-column: root.sort-column; sort-ascending: root.sort-ascending;
         sort(i) => { root.sort(i); }
         activated(i) => { root.action("deep-reveal"); }
@@ -80,8 +95,12 @@ export component DeepSearch inherits VerticalLayout {
     Rectangle {
         background: Palette.surface-readonly; border-color: Palette.border; border-width: 1px; border-radius: 7px;
         VerticalLayout {
-            spacing: 7px; padding: 10px;
-            Label { text: "Background Content Scan & Sync"; font-weight: 650; height: 24px; }
+            spacing: 6px; padding: 9px;
+            HorizontalLayout {
+                spacing: 8px; height: 22px;
+                Label { text: "Background Content Scan & Sync"; font-weight: 650; }
+                Label { text: root.estimate; color: Palette.muted; horizontal-stretch: 1; horizontal-alignment: right; }
+            }
             HorizontalLayout {
                 spacing: 8px;
                 ComboBox { model: root.drives; current-index <=> root.scan-drive; width: 145px; selected => { root.action("estimate"); } }
@@ -92,20 +111,40 @@ export component DeepSearch inherits VerticalLayout {
                 CheckBox { text: "Offline excerpts"; checked <=> root.excerpts; toggled => { root.action("estimate"); } }
                 CheckBox { text: "Skip system folders"; checked <=> root.skip-system; toggled => { root.action("estimate"); } }
             }
-            Label { text: root.estimate; color: Palette.muted; height: 22px; }
             HorizontalLayout {
                 spacing: 7px;
                 Action { label: "Scan content"; primary: true; enabled: !root.busy; clicked => { root.action("content-scan"); } }
                 Action { label: "Cancel"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel"); } }
                 Meter { value: root.progress; horizontal-stretch: 1; }
-                Label { text: root.progress-text; min-width: 200px; }
-            }
-            HorizontalLayout {
-                spacing: 7px;
+                Label { text: root.progress-text; min-width: 190px; }
                 Action { label: "Sync content"; icon-tint: Palette.teal; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
                 Action { label: "Export content…"; enabled: !root.busy; clicked => { root.action("content-export"); } }
                 Action { label: "Import content…"; enabled: !root.busy; clicked => { root.action("content-import"); } }
-                Rectangle { horizontal-stretch: 1; }
+            }
+            Rectangle { height: 1px; background: Palette.border; }
+            HorizontalLayout {
+                spacing: 8px;
+                Label { text: "Semantic AI"; font-weight: 600; }
+                ComboBox {
+                    model: ["Off (Fast Lexical + Synonyms)", "English AI (~30 MB)", "Multilingual EN + NL AI (~128 MB)"];
+                    current-index <=> root.semantic-pack;
+                    width: 255px;
+                    enabled: !root.busy;
+                    selected => { root.action("semantic-select"); }
+                }
+                Label { text: root.semantic-status; color: Palette.muted; horizontal-stretch: 1; }
+                if root.semantic-pack > 0 && !root.semantic-installed : Action {
+                    label: "Download AI Pack"; primary: true; enabled: !root.busy;
+                    clicked => { root.action("semantic-install"); }
+                }
+                if root.semantic-pack > 0 && root.semantic-installed : Action {
+                    label: "Sync AI Vectors"; enabled: !root.busy;
+                    clicked => { root.action("semantic-backfill"); }
+                }
+                if root.semantic-pack > 0 && root.semantic-installed : Action {
+                    label: "Remove Pack"; tone: "danger"; enabled: !root.busy;
+                    clicked => { root.action("semantic-remove"); }
+                }
             }
         }
     }
