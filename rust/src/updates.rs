@@ -13,8 +13,15 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.5.6";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.5.6
+pub const APP_VERSION: &str = "1.6.0";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.0
+- Natural-Language Intent & Facet Chips: Describe what you are looking for in English or Dutch (e.g. \"large pdf invoice from last month without draft\" or \"grote excel vorige maand\") with 1-click dismissible filter chips.
+- Path-Aware Main Search: Search keywords now match across folder paths and filenames together (e.g. \"2024 taxes pdf\" finds Taxes\\2024\\return.pdf).
+- Sub-Millisecond SymSpell Fuzzy Engine & Bilingual Synonyms: Instant Damerau-Levenshtein typo tolerance, diacritic folding, EN/NL concept expansion, and crisp «word» excerpt highlights.
+- Explainable Match Badges: Deep Search results now show sortable Exact, Fuzzy, Close, Filename, Facet, and Semantic match badges.
+- Optional 1-Click Local Semantic AI Packs: Download English (~30 MB) or Multilingual EN + NL (~128 MB) static embedding packs right inside Deep Search to find files by meaning offline with zero external dependencies.
+
+File Inventory 1.5.6
 - Added a built-in Help & User Guide with six browsable topics, accessible from the command bar or F1.
 - Smart Deep Search understands natural exclusions, slash alternatives, and conversational keywords. It ranks full and partial matches together using keyword coverage, adjacency, filename matches, and text relevance.
 
@@ -251,8 +258,8 @@ mod tests {
             release("v9.0.2", false, "FileInventory.exe", format!("sha256:{}", "ab".repeat(32))),
         ];
         assert!(select(invalid).is_none());
-        let selected = select(vec![valid("1.6.0", false), valid("1.5.4", false), valid("9.0.0", true)]).unwrap();
-        assert_eq!(selected.version, Version::new(1, 6, 0));
+        let selected = select(vec![valid("1.7.0", false), valid("1.5.4", false), valid("9.0.0", true)]).unwrap();
+        assert_eq!(selected.version, Version::new(1, 7, 0));
         assert_eq!(selected.sha256, "ab".repeat(32));
     }
 
