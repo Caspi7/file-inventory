@@ -190,6 +190,8 @@ impl Catalog {
                 let _ = configure(&cdb);
                 if let Ok(ctx) = cdb.transaction_with_behavior(TransactionBehavior::Immediate) {
                     let _ = ctx.execute("DELETE FROM content_fts WHERE rowid IN (SELECT file_id FROM content_files WHERE volume=?1 AND status=1)", [id]);
+                    let _ = ctx.execute("DELETE FROM content_meta_fts WHERE rowid IN (SELECT file_id FROM content_files WHERE volume=?1)", [id]);
+                    let _ = crate::semantic::delete_vectors_for_volume(&ctx, id);
                     let _ = ctx.execute("DELETE FROM content_sizes WHERE file_id IN (SELECT file_id FROM content_files WHERE volume=?1)", [id]);
                     let _ = ctx.execute("DELETE FROM content_files WHERE volume=?1", [id]);
                     let _ = ctx.commit();
@@ -248,7 +250,7 @@ impl Catalog {
         let short: Vec<_> = parsed.terms.iter().filter(|term| term.chars().count() < 3).cloned().collect();
         let long: Vec<_> = parsed.terms.iter().filter(|term| term.chars().count() >= 3)
             .map(|term| format!("\"{}\"", term.replace('"', "\"\""))).collect();
-        let fts = (!long.is_empty()).then(|| format!("name_key : ({})", long.join(" AND ")));
+        let fts = (!long.is_empty()).then(|| format!("({})", long.join(" AND ")));
         register_prefixes(&db, short.clone())?;
         let excludes = parsed.exclusions;
         db.create_scalar_function("excluded_name", 1, FunctionFlags::SQLITE_DETERMINISTIC, move |ctx| {
@@ -277,6 +279,10 @@ impl Catalog {
             let inner_order = order.as_deref().unwrap_or("rank,length(name),name_key,volume,rel");
             SEARCH.replace("WHERE ($volume IS NULL OR f.volume=$volume)",
                 &format!("WHERE ($volume IS NULL OR f.volume=$volume) {extra}"))
+                .replace("ELSE 3 END AS rank", "WHEN NOT matches_name_only(parent_key,$query) THEN 3 ELSE 4 END AS rank")
+                .replace("matches_name_prefixes(name_key || ' ' || parent_key)",
+                    if parsed.terms.len() == 1 { "matches_name_prefixes(name_key)" }
+                    else { "matches_name_prefixes(name_key || ' ' || parent_key)" })
                 .replace("SELECT name,rel,mount,volume,label,online,stale,seen,bytes,modified,attributes,rank,0,removed", "SELECT id")
                 .replace("ORDER BY rank,length(name),name_key,volume,rel LIMIT 50;",
                     &format!("ORDER BY {inner_order} LIMIT $limit OFFSET $offset"))
@@ -337,7 +343,49 @@ impl Catalog {
         for tag in tags.split(',').map(normalize_key).filter(|tag| !tag.is_empty()) {
             tx.execute("INSERT OR IGNORE INTO file_tags VALUES(?1,?2,?3)", params![tag,volume_id,rel])?;
         }
-        tx.commit()
+        let indexed_target: Option<(i64, String)> = tx
+            .query_row(
+                "SELECT id, name FROM files WHERE volume=?1 AND rel=?2 AND removed IS NULL",
+                params![volume_id, rel],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        tx.commit()?;
+        if let Some((file_id, name)) = indexed_target {
+            let content_db_path = self.data_dir.join("content.sqlite3");
+            if content_db_path.exists() {
+                if let Ok(cdb) = Connection::open(&content_db_path) {
+                    let _ = configure(&cdb);
+                    let is_indexed: bool = cdb
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM content_files WHERE file_id=?1 AND status=1)",
+                            [file_id],
+                            |r| r.get(0),
+                        )
+                        .unwrap_or(false);
+                    if is_indexed {
+                        let has_meta_fts: bool = cdb
+                            .query_row(
+                                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='content_meta_fts')",
+                                [],
+                                |r| r.get(0),
+                            )
+                            .unwrap_or(false);
+                        if has_meta_fts {
+                            let clean_name = crate::content::tokenize_meta_text(&name);
+                            let clean_path = crate::content::tokenize_meta_text(rel);
+                            let clean_tags = crate::content::tokenize_tags_text(tags);
+                            let _ = cdb.execute("DELETE FROM content_meta_fts WHERE rowid=?1", [file_id]);
+                            let _ = cdb.execute(
+                                "INSERT INTO content_meta_fts(rowid, name, path, tags) VALUES(?1, ?2, ?3, ?4)",
+                                params![file_id, clean_name, clean_path, clean_tags],
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn find_possible_copies(&self, volume_id: &str, rel: &str) -> Result<Vec<FileEntry>> {
@@ -489,6 +537,22 @@ fn register_prefixes(db: &Connection, short: Vec<String>) -> Result<()> {
     db.create_scalar_function("matches_name_prefixes", 1, FunctionFlags::SQLITE_DETERMINISTIC, move |ctx| {
         let prefs = tokenize_prefixes(&ctx.get::<String>(0)?);
         Ok(short.iter().all(|term| prefs.contains(term)))
+    })?;
+    db.create_scalar_function("matches_name_only", 2, FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let name_key = ctx.get::<String>(0)?;
+        let query = ctx.get::<String>(1)?;
+        let mut short_prefs: Option<HashSet<String>> = None;
+        for term in query.split_whitespace() {
+            if term.chars().count() < 3 {
+                let prefs = short_prefs.get_or_insert_with(|| tokenize_prefixes(&name_key).into_iter().collect());
+                if !prefs.contains(term) {
+                    return Ok(false);
+                }
+            } else if !name_key.contains(term) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     })
 }
 
