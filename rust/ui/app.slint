@@ -7,7 +7,7 @@ import { Palette, ThemeMode } from "theme.slint";
 export { Palette, ThemeMode, UiChip }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.6.1";
+    title: "File Inventory 1.6.2";
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
     default-font-family: "Segoe UI";
@@ -248,7 +248,7 @@ export component AppWindow inherits Window {
                             && !(root.overlay == "about" && root.update-installing) : Action {
                             label: "Cancel operation"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("cancel", 0); }
                         }
-                        Action { label: "Close"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close", 0); } }
+                        Action { label: ""; icon: "M4 4L12 12 M12 4L4 12"; width: 28px; height: 28px; horizontal-padding: 7px; tone: "danger"; clicked => { root.action("close", 0); } }
                     }
                     if root.overlay == "deep" : DeepSearch {
                         vertical-stretch: 1;
