@@ -93,6 +93,7 @@ export component DeepSearch inherits VerticalLayout {
         Rectangle { horizontal-stretch: 1; }
     }
     Rectangle {
+        vertical-stretch: 0;
         background: Palette.surface-readonly; border-color: Palette.border; border-width: 1px; border-radius: 7px;
         VerticalLayout {
             spacing: 6px; padding: 9px;
@@ -102,47 +103,53 @@ export component DeepSearch inherits VerticalLayout {
                 Label { text: root.estimate; color: Palette.muted; horizontal-stretch: 1; horizontal-alignment: right; }
             }
             HorizontalLayout {
-                spacing: 8px;
-                ComboBox { model: root.drives; current-index <=> root.scan-drive; width: 145px; selected => { root.action("estimate"); } }
-                ComboBox { model: ["Eco", "Balanced", "Turbo"]; current-index <=> root.resource-mode; width: 100px; selected => { root.action("estimate"); } }
+                spacing: 6px; height: 30px;
+                ComboBox { model: root.drives; current-index <=> root.scan-drive; width: 140px; height: 30px; selected => { root.action("estimate"); } }
+                ComboBox { model: ["Eco", "Balanced", "Turbo"]; current-index <=> root.resource-mode; width: 96px; height: 30px; selected => { root.action("estimate"); } }
                 CheckBox { text: "Text & Code"; checked <=> root.text-files; toggled => { root.action("estimate"); } }
                 CheckBox { text: "Office"; checked <=> root.office; toggled => { root.action("estimate"); } }
                 CheckBox { text: "PDF"; checked <=> root.pdf; toggled => { root.action("estimate"); } }
                 CheckBox { text: "Offline excerpts"; checked <=> root.excerpts; toggled => { root.action("estimate"); } }
                 CheckBox { text: "Skip system folders"; checked <=> root.skip-system; toggled => { root.action("estimate"); } }
+                Rectangle { horizontal-stretch: 1; }
             }
             HorizontalLayout {
-                spacing: 7px;
-                Action { label: "Scan content"; primary: true; enabled: !root.busy; clicked => { root.action("content-scan"); } }
-                Action { label: "Cancel"; tone: "danger"; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel"); } }
-                Meter { value: root.progress; horizontal-stretch: 1; }
-                Label { text: root.progress-text; min-width: 190px; }
-                Action { label: "Sync content"; icon-tint: Palette.teal; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
-                Action { label: "Export content…"; enabled: !root.busy; clicked => { root.action("content-export"); } }
-                Action { label: "Import content…"; enabled: !root.busy; clicked => { root.action("content-import"); } }
+                spacing: 7px; height: 30px;
+                Action { label: "Scan content"; primary: true; horizontal-stretch: 0; enabled: !root.busy; clicked => { root.action("content-scan"); } }
+                Action { label: "Cancel"; tone: "danger"; horizontal-stretch: 0; icon: "M4 4L12 12 M12 4L4 12"; enabled: root.busy; clicked => { root.action("cancel"); } }
+                Rectangle {
+                    horizontal-stretch: 1; min-width: 90px;
+                    Meter { y: (parent.height - self.height) / 2; width: parent.width; value: root.progress; }
+                }
+                Label { text: root.progress-text; min-width: 150px; preferred-width: 170px; horizontal-stretch: 0; }
+                Action { label: "Sync content"; horizontal-stretch: 0; icon-tint: Palette.teal; icon: "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13"; enabled: !root.busy; clicked => { root.action("content-sync"); } }
+                Action { label: "Export content…"; horizontal-stretch: 0; enabled: !root.busy; clicked => { root.action("content-export"); } }
+                Action { label: "Import content…"; horizontal-stretch: 0; enabled: !root.busy; clicked => { root.action("content-import"); } }
             }
             Rectangle { height: 1px; background: Palette.border; }
             HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Linguistic Search"; font-weight: 600; }
+                spacing: 8px; height: 30px;
+                Label { text: "Linguistic Search"; font-weight: 600; horizontal-stretch: 0; }
                 ComboBox {
                     model: ["Off", "English Pack", "Multilingual (EN + NL)"];
                     current-index <=> root.semantic-pack;
                     width: 190px;
+                    height: 30px;
+                    horizontal-stretch: 0;
                     enabled: !root.busy;
                     selected => { root.action("semantic-select"); }
                 }
-                Label { text: root.semantic-status; color: Palette.muted; horizontal-stretch: 1; }
+                Label { text: root.semantic-status; color: Palette.muted; preferred-width: 0px; horizontal-stretch: 1; }
                 if root.semantic-pack > 0 && !root.semantic-installed : Action {
-                    label: "Download Pack"; primary: true; enabled: !root.busy;
+                    label: "Download Pack"; primary: true; horizontal-stretch: 0; enabled: !root.busy;
                     clicked => { root.action("semantic-install"); }
                 }
                 if root.semantic-pack > 0 && root.semantic-installed : Action {
-                    label: "Update Index"; enabled: !root.busy;
+                    label: "Update Index"; horizontal-stretch: 0; enabled: !root.busy;
                     clicked => { root.action("semantic-backfill"); }
                 }
                 if root.semantic-pack > 0 && root.semantic-installed : Action {
-                    label: "Remove Pack"; tone: "danger"; enabled: !root.busy;
+                    label: "Remove Pack"; tone: "danger"; horizontal-stretch: 0; enabled: !root.busy;
                     clicked => { root.action("semantic-remove"); }
                 }
             }
