@@ -91,6 +91,7 @@ export component DeepSearch inherits VerticalLayout {
         Action { label: "Copy Path"; enabled: root.selection >= 0; clicked => { root.action("deep-copy"); } }
         Action { label: "Reveal in Explorer"; icon-tint: Palette.folder; icon: "M1 4H6L8 6H15L13 13H1Z"; enabled: root.selection >= 0; clicked => { root.action("deep-reveal"); } }
         Rectangle { horizontal-stretch: 1; }
+        Action { label: "Close Deep Search"; icon: "M4 4L12 12 M12 4L4 12"; clicked => { root.action("close"); } }
     }
     Rectangle {
         background: Palette.surface-readonly; border-color: Palette.border; border-width: 1px; border-radius: 7px;
