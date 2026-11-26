@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::{Arc,atomic::AtomicBool}, time::Instant};
-use file_inventory::{EngineResult,catalog::{Catalog,Volume},scanner,util};
+use file_inventory::{EngineResult,catalog::{Catalog,Volume},scanner,semantic::{self, SemanticPack},util};
 
 mod guide;
 mod treemap;
@@ -11,7 +11,7 @@ slint::include_modules!();
 
 fn main() -> EngineResult<()> {
     let mut args=std::env::args_os().skip(1);
-    let mode = args.next();
+    let mut mode = args.next();
     if mode.as_deref().is_some_and(|arg| arg == "--benchmark") {
         let root=args.next().map(PathBuf::from).unwrap_or(std::env::current_dir()?);
         let scratch=std::env::temp_dir().join(format!("file-inventory-benchmark-{:032x}",rand::random::<u128>()));
@@ -28,10 +28,29 @@ fn main() -> EngineResult<()> {
         return Ok(());
     }
     let data_dir = if mode.as_deref().is_some_and(|arg| arg == "--data-dir") {
-        args.next().map(PathBuf::from).ok_or("Expected a path after --data-dir")?
+        let path = args.next().map(PathBuf::from).ok_or("Expected a path after --data-dir")?;
+        mode = args.next();
+        path
     } else {
         util::data_dir()
     };
+    if mode.as_deref().is_some_and(|arg| arg == "--install-pack") {
+        let pack = match args.next().as_deref().and_then(|arg| arg.to_str()) {
+            Some("en") => SemanticPack::EnglishFast,
+            Some("multilingual") => SemanticPack::Multilingual,
+            _ => {
+                eprintln!("Usage: FileInventory --install-pack <en|multilingual>");
+                return Ok(());
+            }
+        };
+        let cancel = AtomicBool::new(false);
+        let result = semantic::download_pack(&data_dir, pack, &cancel, |_, _, _| {})
+            .and_then(|()| Ok(semantic::save_pack_setting(&data_dir, pack)?));
+        if let Err(err) = result {
+            eprintln!("Could not install {}: {err}", pack.display_name());
+        }
+        return Ok(());
+    }
     let catalog = Catalog::new(data_dir);
     let session = Rc::new(RefCell::new(Some(catalog.start_session()?)));
     let app=AppWindow::new()?;
