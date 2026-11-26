@@ -27,7 +27,7 @@ pub const DEFAULT_MAX_TOKENS: usize = 512;
 pub const DEFAULT_MIN_COSINE: f32 = 0.24;
 
 const SETTINGS_FILE: &str = "semantic_settings.json";
-const USER_AGENT: &str = "FileInventory/1.6.0";
+const USER_AGENT: &str = concat!("FileInventory/", env!("CARGO_PKG_VERSION"));
 const MAX_SAFETENSORS_HEADER: u64 = 16 * 1024 * 1024;
 const MAX_SUBWORD_BYTES: usize = 64;
 const BODY_PREFIX_CHARS: usize = 8_192;
@@ -73,11 +73,11 @@ impl SemanticPack {
         !matches!(self, Self::Off)
     }
 
-    pub fn repo(self) -> Option<&'static str> {
+    fn download_url(self) -> Option<&'static str> {
         match self {
             Self::Off => None,
-            Self::EnglishFast => Some("minishlab/potion-base-8M"),
-            Self::Multilingual => Some("minishlab/potion-multilingual-128M"),
+            Self::EnglishFast => Some("https://github.com/Caspi7/file-inventory/releases/download/linguistic-packs-v1/linguistic-pack-en-v1.zip"),
+            Self::Multilingual => Some("https://github.com/Caspi7/file-inventory/releases/download/linguistic-packs-v1/linguistic-pack-multilingual-v1.zip"),
         }
     }
 
@@ -92,8 +92,8 @@ impl SemanticPack {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Off => "Off",
-            Self::EnglishFast => "English Fast (~30 MB, 256-dim)",
-            Self::Multilingual => "Multilingual EN + NL (~128 MB, 256-dim)",
+            Self::EnglishFast => "English Linguistic Pack",
+            Self::Multilingual => "Multilingual Linguistic Pack",
         }
     }
 
@@ -176,87 +176,120 @@ pub fn download_pack(
     mut on_progress: impl FnMut(u64, u64, &str),
 ) -> EngineResult<()> {
     check_cancel(cancel)?;
-    let (Some(repo), Some(dir)) = (pack.repo(), pack_dir(data_dir, pack)) else {
-        return Err(invalid("Select an English or Multilingual semantic model pack to download").into());
+    let (Some(url), Some(dir)) = (pack.download_url(), pack_dir(data_dir, pack)) else {
+        return Err(invalid("Select a Linguistic Pack to download").into());
     };
-    fs::create_dir_all(&dir)?;
+    let parent = dir.parent().expect("pack directory has a parent");
+    fs::create_dir_all(parent)?;
+    let nonce = rand::random::<u128>();
+    let staging = parent.join(format!(".pack-{nonce:032x}"));
+    fs::create_dir(&staging)?;
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(20))
-        .timeout_read(Duration::from_secs(60))
-        .build();
-
-    let files = [
-        ("config.json", true),
-        ("tokenizer.json", false),
-        ("model.safetensors", false),
-    ];
-
-    for (file_name, optional) in files {
-        check_cancel(cancel)?;
-        let url = format!("https://huggingface.co/{repo}/resolve/main/{file_name}");
-        let response = match agent.get(&url).set("User-Agent", USER_AGENT).call() {
-            Ok(resp) => resp,
-            Err(ureq::Error::Status(404, _)) if optional => continue,
-            Err(err) if optional => {
-                let _ = err;
-                continue;
-            }
-            Err(err) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to download {file_name}: {err}"),
-                )
-                .into());
-            }
-        };
-
+    let result = (|| -> EngineResult<()> {
+        let archive_name = url.rsplit('/').next().unwrap_or("linguistic-pack.zip");
+        let part_path = staging.join(format!("{archive_name}.part"));
+        let response = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(5))
+            .timeout_read(Duration::from_secs(15))
+            .timeout(Duration::from_secs(300))
+            .build()
+            .get(url)
+            .set("User-Agent", USER_AGENT)
+            .call()
+            .map_err(|err| io::Error::other(format!("Failed to download {archive_name}: {err}")))?;
         let total = response
             .header("Content-Length")
-            .and_then(|v| v.parse::<u64>().ok())
+            .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
-        let part_path = dir.join(format!("{file_name}.part"));
-        let final_path = dir.join(file_name);
+        let mut reader = response.into_reader();
+        let mut output = File::create(&part_path)?;
+        on_progress(0, total, archive_name);
+        copy_pack_bytes(&mut reader, &mut output, cancel, |done| {
+            on_progress(done, if total == 0 { 0 } else { total.max(done) }, archive_name);
+        })?;
+        drop(output);
+        drop(reader);
 
-        let stream_result = (|| -> EngineResult<()> {
-            let mut reader = response.into_reader();
-            let mut out = File::create(&part_path)?;
-            let mut downloaded = 0u64;
-            let mut buf = [0u8; 65_536];
-            on_progress(0, total, file_name);
-            loop {
-                check_cancel(cancel)?;
-                let n = reader.read(&mut buf)?;
-                if n == 0 {
-                    break;
-                }
-                out.write_all(&buf[..n])?;
-                downloaded = downloaded.saturating_add(n as u64);
-                on_progress(downloaded, total.max(downloaded), file_name);
-            }
-            if !optional && downloaded == 0 {
-                return Err(invalid(format!("Downloaded empty {file_name}")).into());
-            }
-            out.sync_all()?;
-            drop(out);
-            fs::rename(&part_path, &final_path)?;
-            Ok(())
-        })();
+        let extracted = staging.join("files");
+        fs::create_dir(&extracted)?;
+        extract_pack(File::open(&part_path)?, &extracted, cancel)?;
+        fs::remove_file(&part_path)?;
+        let embedder = Arc::new(StaticEmbedder::from_dir(&extracted)?);
 
-        if let Err(err) = stream_result {
-            let _ = fs::remove_file(&part_path);
-            return Err(err);
+        let mut cache = EMBEDDER_CACHE.lock().unwrap_or_else(|err| err.into_inner());
+        check_cancel(cancel)?;
+        let backup = parent.join(format!(".pack-backup-{nonce:032x}"));
+        let backed_up = match fs::rename(&dir, &backup) {
+            Ok(()) => true,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => false,
+            Err(err) => return Err(err.into()),
+        };
+        if let Err(err) = fs::rename(&extracted, &dir) {
+            if backed_up {
+                fs::rename(&backup, &dir).map_err(|restore_err| {
+                    io::Error::other(format!("Could not install pack: {err}. Could not restore previous pack from {}: {restore_err}", backup.display()))
+                })?;
+            }
+            return Err(err.into());
         }
-    }
+        *cache = Some((data_dir.to_path_buf(), pack, embedder));
+        drop(cache);
+        if backed_up {
+            let _ = fs::remove_dir_all(backup);
+        }
+        Ok(())
+    })();
 
-    check_cancel(cancel)?;
-    evict_cached_pack(data_dir, pack);
-    let embedder = Arc::new(StaticEmbedder::from_dir(&dir)?);
-    if let Ok(mut guard) = EMBEDDER_CACHE.lock() {
-        *guard = Some((data_dir.to_path_buf(), pack, embedder));
+    let _ = fs::remove_dir_all(staging);
+    result
+}
+
+fn extract_pack(archive: impl Read + Seek, dir: &Path, cancel: &AtomicBool) -> EngineResult<()> {
+    const FILES: [&str; 3] = ["config.json", "tokenizer.json", "model.safetensors"];
+    let mut archive = zip::ZipArchive::new(archive)?;
+    if archive.len() != FILES.len() {
+        return Err(invalid("Linguistic Pack archive must contain exactly three files").into());
+    }
+    let mut seen = HashSet::new();
+    for index in 0..archive.len() {
+        check_cancel(cancel)?;
+        let mut entry = archive.by_index(index)?;
+        let name = entry.name().to_owned();
+        // Exact allowlist requires a single root-level filename, without normalization.
+        if !FILES.contains(&name.as_str())
+            || !entry.is_file()
+            || entry.is_symlink()
+            || entry.size() == 0
+            || !seen.insert(name.clone())
+        {
+            return Err(invalid(format!("Invalid Linguistic Pack archive entry: {name}")).into());
+        }
+        let mut output = File::create(dir.join(name))?;
+        copy_pack_bytes(&mut entry, &mut output, cancel, |_| {})?;
     }
     Ok(())
 }
+
+fn copy_pack_bytes(
+    reader: &mut impl Read,
+    output: &mut File,
+    cancel: &AtomicBool,
+    mut on_progress: impl FnMut(u64),
+) -> io::Result<()> {
+    let mut copied = 0;
+    let mut buffer = [0u8; 65_536];
+    loop {
+        check_cancel(cancel)?;
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(());
+        }
+        output.write_all(&buffer[..count])?;
+        copied += count as u64;
+        on_progress(copied);
+    }
+}
+
 
 pub fn remove_pack(data_dir: &Path, pack: SemanticPack) -> EngineResult<()> {
     evict_cached_pack(data_dir, pack);
@@ -1033,7 +1066,7 @@ static EMBEDDER_CACHE: Mutex<Option<(PathBuf, SemanticPack, Arc<StaticEmbedder>)
 
 pub fn load_embedder(data_dir: &Path, pack: SemanticPack) -> EngineResult<Arc<StaticEmbedder>> {
     if !pack.is_enabled() {
-        return Err(invalid("Semantic search pack is set to Off").into());
+        return Err(invalid("Linguistic Search is set to Off").into());
     }
     if let Ok(guard) = EMBEDDER_CACHE.lock() {
         if let Some((cached_dir, cached_pack, embedder)) = guard.as_ref() {
@@ -1043,7 +1076,7 @@ pub fn load_embedder(data_dir: &Path, pack: SemanticPack) -> EngineResult<Arc<St
         }
     }
 
-    let dir = pack_dir(data_dir, pack).ok_or_else(|| invalid("Semantic pack is disabled"))?;
+    let dir = pack_dir(data_dir, pack).ok_or_else(|| invalid("Linguistic Pack is disabled"))?;
     let loaded = Arc::new(StaticEmbedder::from_dir(&dir)?);
     if let Ok(mut guard) = EMBEDDER_CACHE.lock() {
         *guard = Some((data_dir.to_path_buf(), pack, Arc::clone(&loaded)));
@@ -1459,6 +1492,36 @@ fn check_cancel(cancel: &AtomicBool) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pack_archive_requires_allowlisted_root_files() {
+        let temp = std::env::temp_dir().join(format!(
+            "file-inventory-pack-test-{:032x}",
+            rand::random::<u128>()
+        ));
+        let output = temp.join("files");
+        fs::create_dir_all(&output).unwrap();
+        let cancel = AtomicBool::new(false);
+
+        for (model_name, accepted) in [
+            ("model.safetensors", true),
+            ("../model.safetensors", false),
+            ("nested/model.safetensors", false),
+            ("nested\\model.safetensors", false),
+            ("MODEL.SAFETENSORS", false),
+        ] {
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            for name in ["config.json", "tokenizer.json", model_name] {
+                zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+                zip.write_all(b"fixture").unwrap();
+            }
+            let mut archive = zip.finish().unwrap();
+            archive.set_position(0);
+            assert_eq!(extract_pack(archive, &output, &cancel).is_ok(), accepted);
+            assert!(!temp.join("model.safetensors").exists());
+        }
+        fs::remove_dir_all(&temp).unwrap();
+    }
 
     fn f32_to_f16_bits(val: f32) -> u16 {
         let bits = val.to_bits();
