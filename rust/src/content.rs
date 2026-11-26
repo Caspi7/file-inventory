@@ -1045,7 +1045,7 @@ impl ContentIndex {
                 && rrf_sem > (rrf_body + rrf_meta) * 1.25;
 
             let (reason, tone) = if lexical_absent || semantic_dominant {
-                ("Semantic", "imported")
+                ("Concept", "imported")
             } else if any_covered == total_groups {
                 if exact_covered < total_groups {
                     ("Fuzzy", "warning")
