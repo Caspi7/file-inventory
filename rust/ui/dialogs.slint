@@ -185,8 +185,8 @@ export component DialogBody inherits VerticalLayout {
         }
         notes-scroll := ScrollView {
             vertical-stretch: 1;
-            viewport-width: self.visible-width;
-            viewport-height: max(self.visible-height, notes-text.preferred-height + 16px);
+            content-width: self.visible-width;
+            content-height: max(self.visible-height, notes-text.preferred-height + 16px);
             notes-text := Text {
                 x: 4px; y: 4px;
                 width: max(100px, notes-scroll.visible-width - 16px);
