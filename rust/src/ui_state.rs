@@ -1,4 +1,4 @@
-use crate::{guide, treemap, AppWindow, DataRow, DriveChoice, GuideSection, Palette, ThemeMode, Tile, TreeRow, UiChip};
+use crate::{guide, treemap, AppWindow, DataRow, DriveChoice, GuideCard, GuideSection, Palette, ThemeMode, Tile, TreeRow, UiChip};
 use file_inventory::{
     catalog::{Catalog, FileEntry, FileSort, FileSortColumn, FolderNode, SavedSearch, ScanRecord, SearchFilter, Volume},
     content::{ContentIndex, ContentMatchMode, ContentScanMode, ContentScanOptions, ContentSearchHit, ContentSearchOptions},
@@ -88,6 +88,8 @@ struct State {
     overlay_generation: u64,
     map_generation: u64,
     drive_refreshing: bool,
+    drive_refresh_generation: u64,
+    deleting_drive: bool,
     browser_loaded: bool,
     choices: Vec<Volume>,
     choice_indices: Vec<Option<usize>>,
@@ -125,7 +127,8 @@ pub fn bind(app: &AppWindow, catalog: Catalog, session: Rc<RefCell<Option<File>>
         search_timer: Timer::default(), refresh_timer: Timer::default(),
         volumes: Vec::new(), current: None, tree: Vec::new(), expanded: HashSet::new(), children: HashMap::new(),
         files: Vec::new(), job: None, query_generation: Arc::default(), page_offset: 0, deep_generation: Arc::default(), estimate_generation: 0,
-        overlay_generation: 0, map_generation: 0, drive_refreshing: false, browser_loaded: false,
+        overlay_generation: 0, map_generation: 0, drive_refreshing: false, drive_refresh_generation: 0,
+        deleting_drive: false, browser_loaded: false,
         choices: Vec::new(), choice_indices: Vec::new(),
         local_host: std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default(),
         checked: HashSet::new(), commands: Vec::new(), groups: Vec::new(),
@@ -390,7 +393,13 @@ impl State {
                     app.set_guide_sections(model(guide::SECTIONS.iter().map(|section| GuideSection {
                         title: section.title.into(),
                         subtitle: section.subtitle.into(),
-                        body: section.body.into(),
+                        cards: model(section.cards.iter().map(|card| GuideCard {
+                            heading: card.heading.into(),
+                            badge: card.badge.into(),
+                            tone: card.tone.into(),
+                            body: card.body.into(),
+                            example: card.example.into(),
+                        })),
                     })));
                 }
             }
@@ -560,18 +569,23 @@ impl State {
     }
 
     fn refresh_drives(&mut self, app: &AppWindow, schedule: bool) {
-        if self.drive_refreshing { return; }
+        if self.drive_refreshing || self.deleting_drive { return; }
         self.drive_refreshing = true;
+        let generation = self.drive_refresh_generation;
         self.work(app, move |catalog| {
             if schedule { Ok(catalog.discover_volumes()?) }
             else { Ok(catalog.volumes()?) }
         }, move |state, app, result| {
+            if generation != state.drive_refresh_generation { return; }
             state.drive_refreshing = false;
             match result {
                 Ok(volumes) => {
                     if !state.browser_loaded || state.volumes != volumes || !schedule {
                         state.volumes = volumes;
                         state.refresh_browser(app);
+                    }
+                    if !schedule && matches!(app.get_overlay().as_str(), "library" | "scope") {
+                        state.refresh_drive_choices(app);
                     }
                     if schedule && state.job.is_none() {
                         let now = util::now_ms();
@@ -618,6 +632,7 @@ impl State {
     fn load_children(&self, app: &AppWindow, key: FolderKey) {
         let query = key.clone();
         self.work(app, move |catalog| Ok(catalog.child_folders(&query.0, &query.1)?), move |state, app, result| {
+            if !state.volumes.iter().any(|v| v.id == key.0) { return; }
             match result {
                 Ok(children) => { state.children.insert(key, children); state.render_tree(app); }
                 Err(error) => message(app, error.to_string()),
@@ -677,7 +692,7 @@ impl State {
         self.choices = self.volumes.iter().filter(|v| mode != "picker" || v.online).cloned().collect();
         self.checked = self.choices.iter().filter(|v| self.visible.as_ref().is_none_or(|ids| ids.contains(&v.id))).map(|v| v.id.clone()).collect();
         self.render_choices(app);
-        if mode == "picker" {
+        if mode == "picker" && !self.deleting_drive {
             let generation = self.overlay_generation;
             self.work(app, |catalog| {
                 Ok(catalog.discover_volumes()?)
@@ -704,6 +719,24 @@ impl State {
         self.choices = self.volumes.iter().filter(|v| v.online).cloned().collect();
         self.checked = self.choices.iter().filter(|v| self.visible.as_ref().is_none_or(|scope| scope.contains(&v.id))).map(|v| v.id.clone()).collect();
         self.render_choices(app);
+    }
+
+    fn refresh_drive_choices(&mut self, app: &AppWindow) {
+        let selected_id = self.drive_choice(app.get_dialog_selection()).map(|v| v.id.clone());
+        let previous_ids: HashSet<_> = self.choices.iter().map(|v| &v.id).collect();
+        self.checked = self.volumes.iter().filter(|v| {
+            if previous_ids.contains(&v.id) {
+                self.checked.contains(&v.id)
+            } else {
+                self.visible.as_ref().is_none_or(|ids| ids.contains(&v.id))
+            }
+        }).map(|v| v.id.clone()).collect();
+        self.choices = self.volumes.clone();
+        self.render_choices(app);
+        let selection = self.choice_indices.iter().position(|index| {
+            index.is_some_and(|i| Some(&self.choices[i].id) == selected_id.as_ref())
+        });
+        app.set_dialog_selection(selection.map_or(-1, |i| i as i32));
     }
 
     fn render_choices(&mut self, app: &AppWindow) {
@@ -806,7 +839,9 @@ impl State {
 
     fn update_library(&mut self, app: &AppWindow) {
         let generation = self.overlay_generation;
+        let drive_generation = self.drive_refresh_generation;
         self.work(app, |catalog| Ok(catalog.volumes()?), move |state, app, result| {
+            if drive_generation != state.drive_refresh_generation { return; }
             match result {
                 Ok(volumes) => {
                     state.volumes = volumes;
@@ -1545,21 +1580,51 @@ impl State {
                 message(app, "Search saved");
             }
             "remove" => if let Some(volume) = self.removing.clone() {
+                if self.job.is_some() {
+                    message(app, "A background operation is already running");
+                    return Ok(());
+                }
+                let previous_scope = self.visible.clone();
+                let mut remaining = previous_scope.clone().unwrap_or_else(|| {
+                    self.volumes.iter().map(|v| v.id.clone()).collect()
+                });
+                remaining.retain(|id| *id != volume.id);
+                util::save_selected_drives(&self.catalog.data_dir, Some(&remaining))?;
                 let Some(cancel) = self.begin(app, "inventory", "Removing drive…") else { return Ok(()); };
+                self.visible = Some(remaining.clone());
+                self.deleting_drive = true;
+                self.drive_refresh_generation += 1;
+                self.drive_refreshing = false;
+                self.volumes.retain(|v| v.id != volume.id);
+                self.choices.retain(|v| v.id != volume.id);
                 self.checked.remove(&volume.id);
-                let remaining = self.volumes.iter().filter(|v| v.id != volume.id && self.checked.contains(&v.id)).map(|v| v.id.clone()).collect::<Vec<_>>();
-                let _ = util::save_selected_drives(&self.catalog.data_dir, Some(&remaining));
-                self.visible = Some(remaining);
+                if self.current.as_ref().is_some_and(|(id, _)| *id == volume.id) {
+                    self.current = None;
+                }
+                self.expanded.retain(|(id, _)| *id != volume.id);
+                self.children.retain(|(id, _), _| *id != volume.id);
+                self.render_choices(app);
                 self.close(app);
+                self.refresh_browser(app);
                 self.work(app, move |catalog| {
-                    if cancel.load(Ordering::Relaxed) { return Ok("Operation cancelled".into()); }
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(std::io::Error::from(std::io::ErrorKind::Interrupted).into());
+                    }
                     catalog.delete_volume(&volume.id)?;
                     Ok(format!("Removed {}", volume_label(&volume)))
-                }, |state, app, result| {
+                }, move |state, app, mut result| {
+                    state.deleting_drive = false;
+                    if result.is_err() && state.visible.as_ref() == Some(&remaining) {
+                        match util::save_selected_drives(&state.catalog.data_dir, previous_scope.as_deref()) {
+                            Ok(()) => state.visible = previous_scope,
+                            Err(error) => {
+                                let removal_error = result.unwrap_err();
+                                result = Err(format!("{removal_error}. Could not restore drive scope: {error}").into());
+                            }
+                        }
+                    }
                     state.end(app, result);
                     state.refresh_drives(app, false);
-                    state.open_drives(app, "library");
-                    state.update_library(app);
                 });
             },
             "import-password" => if let Some(path) = self.pending_import.clone() {
