@@ -1,6 +1,6 @@
 [package]
 name = "file-inventory"
-version = "1.6.6"
+version = "1.6.7"
 edition = "2021"
 description = "Fast Windows drive catalog, cross-drive duplicate finder, storage map, and smart Deep Search"
 license = "LicenseRef-Elastic-2.0"
@@ -42,7 +42,7 @@ sha2 = "0.10"
 rand = "0.8"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 quick-xml = "0.37"
-chrono = "0.4"
+chrono = "=0.4.38"
 dirs = "5"
 arboard = "3"
 regex = "1"
