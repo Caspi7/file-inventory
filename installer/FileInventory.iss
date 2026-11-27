@@ -5,7 +5,7 @@
   #define BuildOutput "output"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "1.6.9"
+  #define BuildVersion "1.6.10"
 #endif
 
 [Setup]

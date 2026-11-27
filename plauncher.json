@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "file-inventory",
+  "name": "File Inventory",
+  "description": "Catalogiseer drives en vind bestanden, opslaggebruik en duplicaten.",
+  "architecture": "x86_64",
+  "channel": "stable",
+  "icon_path": "assets/FileInventory.png",
+  "installer": {
+    "kind": "inno",
+    "app_id": "C79DF90C-B339-4190-8A4C-BC3E619780E2",
+    "asset_pattern": "FileInventory_Setup_x64_{version}.exe",
+    "checksum_asset": "SHA256SUMS.txt"
+  },
+  "executable": {
+    "file_name": "FileInventory.exe",
+    "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C79DF90C-B339-4190-8A4C-BC3E619780E2}_is1",
+    "install_dir_value": "InstallLocation"
+  }
+}

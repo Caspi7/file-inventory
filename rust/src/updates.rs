@@ -13,8 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.9";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.9
+pub const APP_VERSION: &str = "1.6.10";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.10
+- Added plauncher.json manifest and 512x512 high-resolution FileInventory.png logo for Plauncher integration.
+
+File Inventory 1.6.9
 - Updated theme cycle order to Light -> Dark -> Dark Blue -> Light and improved theme.txt persistence across updates.
 - Fixed the sidebar 'Save schedule' button and hours input layout so it no longer clips past the card border.
 
