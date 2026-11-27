@@ -1,6 +1,6 @@
 [package]
 name = "file-inventory"
-version = "1.6.5"
+version = "1.6.6"
 edition = "2021"
 description = "Fast Windows drive catalog, cross-drive duplicate finder, storage map, and smart Deep Search"
 license = "LicenseRef-Elastic-2.0"
@@ -15,7 +15,6 @@ slint = { version = "=1.9.2", default-features = false, features = [
     "compat-1-2",
     "backend-winit",
     "raw-window-handle-06",
-    "renderer-femtovg",
     "renderer-software",
 ] }
 rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite", "functions", "hooks"] }
