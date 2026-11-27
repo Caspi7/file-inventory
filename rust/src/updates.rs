@@ -13,8 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.7";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.7
+pub const APP_VERSION: &str = "1.6.8";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.8
+- Restored all toolbar, folder, drive, and file icons in Slint's stable software renderer using compile-time rasterized SVG assets with dynamic theme tinting.
+
+File Inventory 1.6.7
 - Fixed immediate startup crash (0xc0000005) when formatting drive timestamps by pinning chrono to 0.4.38.
 
 File Inventory 1.6.6

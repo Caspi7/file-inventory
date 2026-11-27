@@ -11,23 +11,24 @@ export component Label inherits Text {
     vertical-alignment: center;
     overflow: elide;
 }
-export component ItemIcon inherits Path {
+export component ItemIcon inherits Rectangle {
     in property <string> kind;
     property <bool> folder: kind == "folder";
     property <bool> drive: kind == "drive-online" || kind == "drive-offline" || kind == "drive-imported";
     width: 13px; height: 13px;
-    viewbox-width: 16; viewbox-height: 16;
-    commands: folder ? "M1 4Q1 3 2 3H6L8 5H14Q15 5 15 6V13Q15 14 14 14H2Q1 14 1 13Z"
-        : drive ? "M3 5H13L15 10V13H1V10Z M1 10H15 M11 11.5H13"
-        : "M4 2H9L12 5V14H4Z M9 2V5H12";
-    stroke-width: folder ? 1px : 1.4px;
-    fill: folder ? Palette.folder : transparent;
-    stroke: folder ? Palette.folder-stroke
-        : kind == "drive-online" ? Palette.drive : kind == "drive-offline" ? Palette.warning
-        : kind == "drive-imported" || kind == "code" ? Palette.imported
-        : kind == "pdf" ? Palette.danger : kind == "sheet" ? Palette.success
-        : kind == "doc" ? Palette.accent : kind == "media" ? Palette.warning
-        : kind == "archive" ? Palette.teal : Palette.muted;
+    if folder : Image {
+        width: 13px; height: 13px;
+        source: @image-url("icons/item-folder.svg");
+    }
+    if !folder : Image {
+        width: 13px; height: 13px;
+        source: drive ? @image-url("icons/item-drive.svg") : @image-url("icons/item-file.svg");
+        colorize: kind == "drive-online" ? Palette.drive : kind == "drive-offline" ? Palette.warning
+            : kind == "drive-imported" || kind == "code" ? Palette.imported
+            : kind == "pdf" ? Palette.danger : kind == "sheet" ? Palette.success
+            : kind == "doc" ? Palette.accent : kind == "media" ? Palette.warning
+            : kind == "archive" ? Palette.teal : Palette.muted;
+    }
 }
 
 export component SemanticPill inherits Rectangle {
@@ -113,14 +114,27 @@ export component Action inherits Rectangle {
         padding-left: root.horizontal-padding;
         padding-right: root.horizontal-padding;
         spacing: 5px;
-        if root.icon != "" : Path {
+        if root.icon != "" : Image {
             width: 14px; height: 14px; y: (parent.height - self.height) / 2;
-            viewbox-width: 16; viewbox-height: 16;
-            commands: root.icon;
-            stroke: root.primary && root.enabled ? white : !root.enabled ? Palette.disabled-fg : root.toned ? root.tone-ink
+            source: root.icon == "M2 3H14V11H2Z M5 13H11 M6 6L8 8L10 6" ? @image-url("icons/scope.svg")
+                : root.icon == "M2 4H14V12H2Z M4 9H11 M11 6H12" ? @image-url("icons/scan.svg")
+                : root.icon == "M4 4L12 12 M12 4L4 12" ? @image-url("icons/close.svg")
+                : root.icon == "M2 7L5 4H12L14 6 M2 7V3 M14 9L11 12H4L2 10 M14 9V13" ? @image-url("icons/sync.svg")
+                : root.icon == "M8 1V4 M8 12V15 M1 8H4 M12 8H15 M3 3L5 5 M11 11L13 13 M3 13L5 11 M11 5L13 3 M8 4A4 4 0 1 0 8 12A4 4 0 1 0 8 4" ? @image-url("icons/settings.svg")
+                : root.icon == "M2 3H14V7H2Z M2 9H14V13H2Z M11 5H12 M11 11H12" ? @image-url("icons/drives.svg")
+                : root.icon == "M2 2H10V10H2Z M6 11V14H14V6H11" ? @image-url("icons/copy.svg")
+                : root.icon == "M3 2H13V14H3Z M5 5H11 M5 8H11 M5 11H9" ? @image-url("icons/changes.svg")
+                : root.icon == "M11 7A4 4 0 1 0 3 7A4 4 0 1 0 11 7 M10 10L14 14" ? @image-url("icons/search.svg")
+                : root.icon == "M8 2V10 M4 6L8 10L12 6 M2 11V14H14V11" ? @image-url("icons/update.svg")
+                : root.icon == "M11 2A6 6 0 1 0 14 11A6 6 0 0 1 11 2" ? @image-url("icons/theme.svg")
+                : root.icon == "M2 8H4 M7 8H9 M12 8H14" ? @image-url("icons/more.svg")
+                : root.icon == "M5 5C5 1 12 1 12 5C12 8 8 8 8 11 M8 13V15" ? @image-url("icons/help.svg")
+                : root.icon == "M3 8L8 3L13 8 M8 3V14" ? @image-url("icons/up.svg")
+                : root.icon == "M8 1L10 6L15 6L11 9L13 14L8 11L3 14L5 9L1 6L6 6Z" ? @image-url("icons/star.svg")
+                : root.icon == "M1 4H6L8 6H15L13 13H1Z" ? @image-url("icons/reveal.svg")
+                : @image-url("icons/trash.svg");
+            colorize: root.primary && root.enabled ? white : !root.enabled ? Palette.disabled-fg : root.toned ? root.tone-ink
                 : root.icon-tint != Colors.transparent ? root.icon-tint : Palette.fg;
-            stroke-width: 1.35px;
-            fill: transparent;
         }
         if root.label != "" : Label {
             text: root.label;
