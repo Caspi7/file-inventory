@@ -203,7 +203,7 @@ impl State {
             "worker-completed" => while let Ok(done) = self.rx.try_recv() { done(self, app); },
             "tick" => { self.apply_theme(app); self.refresh_drives(app, true); }
             "theme" => {
-                self.theme = match self.theme { Theme::System => Theme::Light, Theme::Light => Theme::Dark, Theme::Dark => Theme::DarkBlue, Theme::DarkBlue => Theme::System };
+                self.theme = match self.theme { Theme::System | Theme::DarkBlue => Theme::Light, Theme::Light => Theme::Dark, Theme::Dark => Theme::DarkBlue };
                 util::save_theme(&self.catalog.data_dir, self.theme)?;
                 self.apply_theme(app);
             }

@@ -78,8 +78,10 @@ pub(crate) fn prefixes(name: &str, parent: &str) -> Vec<String> {
 pub enum Theme { #[default] System, Light, Dark, DarkBlue }
 
 pub fn load_theme(dir: &Path) -> Theme {
-    match fs::read_to_string(dir.join("theme.txt")).unwrap_or_default().trim() {
-        "Light" => Theme::Light, "Dark" => Theme::Dark, "DarkBlue" => Theme::DarkBlue,
+    match fs::read_to_string(dir.join("theme.txt")).unwrap_or_default().trim().to_ascii_lowercase().as_str() {
+        "light" => Theme::Light,
+        "dark" => Theme::Dark,
+        "darkblue" | "dark blue" => Theme::DarkBlue,
         _ => Theme::System,
     }
 }

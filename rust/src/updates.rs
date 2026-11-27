@@ -13,8 +13,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.8";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.8
+pub const APP_VERSION: &str = "1.6.9";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.9
+- Updated theme cycle order to Light -> Dark -> Dark Blue -> Light and improved theme.txt persistence across updates.
+- Fixed the sidebar 'Save schedule' button and hours input layout so it no longer clips past the card border.
+
+File Inventory 1.6.8
 - Restored all toolbar, folder, drive, and file icons in Slint's stable software renderer using compile-time rasterized SVG assets with dynamic theme tinting.
 
 File Inventory 1.6.7

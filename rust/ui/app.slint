@@ -7,7 +7,7 @@ import { Palette, ThemeMode } from "theme.slint";
 export { GuideCard, Palette, ThemeMode, UiChip }
 
 export component AppWindow inherits Window {
-    title: "File Inventory 1.6.8";
+    title: "File Inventory 1.6.9";
     icon: @image-url("../../Assets/FileInventory.png");
     preferred-width: 1360px; preferred-height: 800px;
     min-width: 1130px; min-height: 635px;
@@ -168,9 +168,9 @@ export component AppWindow inherits Window {
                         CheckBox { text: "Schedule refresh"; checked <=> root.schedule; enabled: root.has-volume; }
                         HorizontalLayout {
                             spacing: 6px;
-                            LineEdit { placeholder-text: "Hours"; text <=> root.hours; enabled: root.has-volume; horizontal-stretch: 1; }
-                            Label { text: "hours"; }
-                            Action { label: "Save schedule"; enabled: root.has-volume; clicked => { root.action("schedule", 0); } }
+                            LineEdit { placeholder-text: "Hours"; text <=> root.hours; enabled: root.has-volume; width: 58px; }
+                            Label { text: "hrs"; horizontal-stretch: 0; }
+                            Action { label: "Save schedule"; enabled: root.has-volume; horizontal-stretch: 1; clicked => { root.action("schedule", 0); } }
                         }
                         Rectangle {
                             height: 146px; border-radius: 5px; background: Palette.surface-readonly; border-width: 1px; border-color: Palette.border;
