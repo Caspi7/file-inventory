@@ -13,8 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{scanner::check_cancel, util, EngineResult};
 
-pub const APP_VERSION: &str = "1.6.4";
-pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.4
+pub const APP_VERSION: &str = "1.6.5";
+pub const FULL_RELEASE_NOTES: &str = "File Inventory 1.6.5
+- Added the File Inventory logo directly to the window titlebar and taskbar icon.
+
+File Inventory 1.6.4
 - Drive removal updates the browser immediately and keeps the current dialog state.
 - Modal headers use a single close button.
 - The Help & User Guide is organized into short cards.

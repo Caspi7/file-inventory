@@ -19,7 +19,7 @@ export component Guide inherits VerticalLayout {
             primary: i == root.selected;
             clicked => {
                 root.selected = i;
-                guide-scroll.content-y = 0px;
+                guide-scroll.viewport-y = 0px;
             }
         }
     }
@@ -40,8 +40,8 @@ export component Guide inherits VerticalLayout {
             }
             guide-scroll := ScrollView {
                 vertical-stretch: 1;
-                content-width: self.visible-width;
-                content-height: max(self.visible-height, cards.preferred-height);
+                viewport-width: self.visible-width;
+                viewport-height: max(self.visible-height, cards.preferred-height);
                 cards := VerticalLayout {
                     width: guide-scroll.visible-width;
                     height: self.preferred-height;

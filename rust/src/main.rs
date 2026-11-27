@@ -75,18 +75,18 @@ impl Drop for Scratch {
 
 #[cfg(windows)]
 fn set_titlebar(app: &AppWindow, dark: bool) {
-    use slint::{ComponentHandle, winit_030::{WinitWindowAccessor, winit::raw_window_handle::{HasWindowHandle, RawWindowHandle}}};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use slint::ComponentHandle;
     use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 
-    app.window().with_winit_window(|window| {
-        let Ok(handle) = window.window_handle() else { return; };
-        let RawWindowHandle::Win32(handle) = handle.as_raw() else { return; };
-        let enabled = i32::from(dark);
-        unsafe {
-            DwmSetWindowAttribute(handle.hwnd.get() as _, DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
-                (&enabled as *const i32).cast(), std::mem::size_of_val(&enabled) as u32);
-        }
-    });
+    let win_handle = app.window().window_handle();
+    let Ok(handle) = win_handle.window_handle() else { return; };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else { return; };
+    let enabled = i32::from(dark);
+    unsafe {
+        DwmSetWindowAttribute(handle.hwnd.get() as _, DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            (&enabled as *const i32).cast(), std::mem::size_of_val(&enabled) as u32);
+    }
 }
 
 #[cfg(not(windows))]

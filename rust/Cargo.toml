@@ -1,6 +1,6 @@
 [package]
 name = "file-inventory"
-version = "1.6.4"
+version = "1.6.5"
 edition = "2021"
 description = "Fast Windows drive catalog, cross-drive duplicate finder, storage map, and smart Deep Search"
 license = "LicenseRef-Elastic-2.0"
@@ -10,11 +10,11 @@ name = "FileInventory"
 path = "src/main.rs"
 
 [dependencies]
-slint = { version = "1.9", default-features = false, features = [
+slint = { version = "=1.9.2", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
-    "unstable-winit-030",
+    "raw-window-handle-06",
     "renderer-femtovg",
     "renderer-software",
 ] }
@@ -53,9 +53,10 @@ ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 
 [target.'cfg(windows)'.dependencies]
 rfd = { version = "0.15", default-features = false }
+raw-window-handle = "0.6"
 
 [build-dependencies]
-slint-build = "1.9"
+slint-build = "=1.9.2"
 winres = "0.1"
 
 [profile.release]

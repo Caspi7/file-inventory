@@ -87,10 +87,11 @@ export component Action inherits Rectangle {
     in property <string> label;
     in property <string> icon;
     in property <color> icon-tint: transparent;
+    in property <length> horizontal-padding: 9px;
     in property <string> tone: "";
     property <color> tone-ink: tone == "danger" ? Palette.danger : tone == "success" ? Palette.success
         : tone == "warning" ? Palette.warning : tone == "accent" ? Palette.accent : transparent;
-    property <bool> toned: enabled && !primary && tone-ink != transparent;
+    property <bool> toned: enabled && !primary && tone-ink != Colors.transparent;
     in property <bool> primary;
     in property <bool> tab;
     in property <bool> enabled: true;
@@ -109,15 +110,15 @@ export component Action inherits Rectangle {
             ? (tone == "danger" ? Palette.danger-bg : tone == "success" ? Palette.success-bg : Palette.warning-bg)
         : enabled && pointer.pressed ? Palette.surface-pressed : enabled && pointer.has-hover ? Palette.surface-hover : Palette.surface;
     line := HorizontalLayout {
-        padding-left: 9px;
-        padding-right: 9px;
+        padding-left: root.horizontal-padding;
+        padding-right: root.horizontal-padding;
         spacing: 5px;
         if root.icon != "" : Path {
             width: 14px; height: 14px; y: (parent.height - self.height) / 2;
             viewbox-width: 16; viewbox-height: 16;
             commands: root.icon;
             stroke: root.primary && root.enabled ? white : !root.enabled ? Palette.disabled-fg : root.toned ? root.tone-ink
-                : root.icon-tint != transparent ? root.icon-tint : Palette.fg;
+                : root.icon-tint != Colors.transparent ? root.icon-tint : Palette.fg;
             stroke-width: 1.35px;
             fill: transparent;
         }
@@ -220,7 +221,7 @@ export component Grid inherits VerticalLayout {
     Rectangle {
         height: 29px; background: Palette.header-bg; clip: true;
         Cells {
-            x: items.content-x; width: root.table-width; height: parent.height;
+            x: items.viewport-x; width: root.table-width; height: parent.height;
             headers: root.headers; column-mode: root.column-mode; ink: Palette.muted;
             header: true; sort-column: root.sort-column; sort-ascending: root.sort-ascending;
             sort(i) => { root.sort(i); }
@@ -228,7 +229,7 @@ export component Grid inherits VerticalLayout {
         Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; }
     }
     items := ListView {
-        content-width: root.table-width;
+        viewport-width: root.table-width;
         for row[i] in root.rows : Rectangle {
             width: root.table-width; height: 29px; clip: true;
             background: i == root.selection ? Palette.accent-pressed : hit.has-hover ? Palette.surface-hover : mod(i, 2) == 0 ? Palette.surface : Palette.surface-alt;
